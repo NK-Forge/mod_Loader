@@ -1,0 +1,70 @@
+# Node / build artifacts
+node_modules/
+dist/
+out/
+build/
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Vite / Electron temp
+.vite/
+.cache/
+electron/.vite/
+electron/out/
+*.tsbuildinfo
+
+# Packaging / installers
+release/
+*.asar
+*.dmg
+*.exe
+*.msi
+*.zip
+
+# Env / credentials
+.env
+.env.local
+.env.*.local
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# Tests / coverage
+coverage/
+test-results/
+jest-cache/
+jest-coverage/
+playwright-report/
+test-output/
+
+# OS / misc
+*.log
+*.tmp
+*.bak
+*.orig
+
+# User data (runtime app folders)
+userData/
+logs/
+cache/
+tmp/
+
+# Electron builder outputs
+/dist_electron/
+/dist/
+*.map
+
+# Optional: ignore local configs created at runtime
+config.json
+profiles.json
