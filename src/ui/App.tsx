@@ -1,8 +1,11 @@
+// src/ui/App.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import SetupWizard from "./SetupWizard";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
-
 type AppConfig = {
+  setupComplete: boolean;
+  autoDetected: boolean;
   gameRoot: string;
   gameExe: string;
   activeModsPath: string;
@@ -10,80 +13,111 @@ type AppConfig = {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
-  autoDetected: boolean;
 };
 
+type ModInfo = { name: string; inMods: boolean; inVault: boolean };
+
 export default function App() {
-  const [cfg, setCfg] = useState<AppConfig>({
-    gameRoot: "",
-    gameExe: "",
-    activeModsPath: "",
-    modsVaultPath: "",
-    modPlayVaultPath: "",
-    saveDataPath: "",
-    installStrategy: "hardlink",
-    autoDetected: false,
-  });
-
-  const [mods, setMods] = useState<string[]>([]);
+  const [cfg, setCfg] = useState<AppConfig | null>(null);
+  const [mods, setMods] = useState<ModInfo[]>([]);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const enabledList = useMemo(() => Object.keys(checked).filter(k => checked[k]), [checked]);
 
-  // Load config + mods at startup
+  const enabledList = useMemo(
+    () => Object.keys(checked).filter((k) => checked[k]),
+    [checked]
+  );
+
+  const refreshMods = async () => {
+    const items = await window.api.modsScan();
+    setMods(items);
+    setChecked(Object.fromEntries(items.map(m => [m.name, !!m.inMods])));
+  };
+
   useEffect(() => {
     (async () => {
       const c = await window.api.getConfig();
       setCfg(c);
-      const list = await window.api.listMods();
-      setMods(list);
-      // initialize checkbox state (all off)
-      setChecked(Object.fromEntries(list.map(m => [m, false])));
+      if (c?.setupComplete) await refreshMods();
     })();
   }, []);
 
-  // Helpers
-  const markAll = (val: boolean) => {
-    setChecked(Object.fromEntries(mods.map(m => [m, val])));
-  };
-  const toggle = (m: string) => {
-    setChecked(prev => ({ ...prev, [m]: !prev[m] }));
+  if (!cfg) return <div style={{ padding: 16 }}>Loading…</div>;
+
+  if (!cfg.setupComplete) {
+    return (
+      <SetupWizard
+        onDone={async () => {
+          const c = await window.api.getConfig();
+          setCfg(c);
+          await refreshMods();
+        }}
+      />
+    );
+  }
+
+  // --- UI handlers ---
+  const browseInto = async (field: keyof AppConfig) => {
+    const p = await window.api.browseFolder();
+    if (!p) return;
+    setCfg(prev => (prev ? { ...prev, [field]: p } : prev));
   };
 
-  // Save config
   const saveConfig = async () => {
+    if (!cfg) return;
     await window.api.setConfig(cfg);
-    const list = await window.api.listMods();
-    setMods(list);
-    // keep existing check states where possible
-    setChecked(prev => {
-      const next = { ...prev };
-      for (const m of list) if (!(m in next)) next[m] = false;
-      for (const k of Object.keys(next)) if (!list.includes(k)) delete next[k];
-      return next;
-    });
+    await refreshMods();
     alert("Config saved.");
   };
 
-  // Browse helpers
-  const browseInto = async (field: keyof AppConfig) => {
-    const selected = await window.api.browseFolder();
-    if (!selected) return;
-    setCfg(prev => ({ ...prev, [field]: selected }));
+  const toggle = async (name: string) => {
+    const next = !checked[name];
+    setChecked(prev => ({ ...prev, [name]: next })); // optimistic
+    try {
+      if (next) {
+        // enabling requires mod to be in vault; installs into mods
+        await window.api.enableMod(name);
+      } else {
+        // disabling: ensure vault copy, then remove from mods
+        await window.api.disableMod(name);
+      }
+    } catch (err: any) {
+      alert(err?.message ?? String(err));
+      setChecked(prev => ({ ...prev, [name]: !next })); // revert
+    } finally {
+      await refreshMods();
+    }
+  };
+
+  const markAll = async (val: boolean) => {
+    // Bulk enable/disable using per-mod rules
+    for (const m of mods) {
+      const want = val;
+      const have = !!checked[m.name];
+      if (want && !have) {
+        try { await window.api.enableMod(m.name); } catch {}
+      } else if (!want && have) {
+        try { await window.api.disableMod(m.name); } catch {}
+      }
+    }
+    await refreshMods();
+  };
+
+  const deleteEverywhere = async (name: string) => {
+    if (!confirm(`Delete "${name}" from BOTH the game mods folder and the vault? This cannot be undone.`)) return;
+    await window.api.deleteMod(name);
+    await refreshMods();
   };
 
   const apply = async () => {
     await window.api.applyMods(enabledList);
-    alert("Mods applied to active folder.");
+    alert("Applied selected mods to the game's mods folder.");
   };
 
   const launchTracked = async () => {
-    // This restores the latest snapshot from mod_play_vault -> live save,
-    // applies mods fresh, launches game, and on exit backs up live save to mod_play_vault/<timestamp>.
     const ok = await window.api.launchWithModsTracked(enabledList);
     if (ok) alert("Game closed — live save backed up to mod_play_vault.");
   };
 
-  // Status checks
   const pathsOk =
     !!cfg.gameExe &&
     !!cfg.activeModsPath &&
@@ -91,42 +125,42 @@ export default function App() {
     !!cfg.modPlayVaultPath &&
     !!cfg.saveDataPath;
 
+  // --- Render ---
   return (
-    <div className="wrap">
-      <h1>WH Mod Toggler</h1>
+    <div className="wrap" style={{ padding: 16 }}>
+      <h1>WH40K Mod Manager</h1>
 
-      {/* Status */}
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
             <div className="hint">
               {cfg.autoDetected ? (
-                <span className="ok">Auto-detected default paths where possible.</span>
+                <span className="ok">Auto-detected defaults where possible.</span>
               ) : (
-                <span className="warn">No auto-detection yet.</span>
+                <span className="warn">No auto-detection captured.</span>
               )}
             </div>
             <div className="hint">
               {pathsOk ? (
                 <span className="ok">Ready: All key paths are set.</span>
               ) : (
-                <span className="err">Incomplete: Set all folders below before using “Launch (Tracked)”.</span>
+                <span className="err">Set all folders below before using “Launch (Tracked)”.</span>
               )}
             </div>
           </div>
           <div className="toolbar">
-            <button onClick={saveConfig} title="Save the configuration and refresh mod list.">Save Config</button>
+            <button onClick={saveConfig}>Save Config</button>
+            <button onClick={refreshMods} title="Re-scan mods & vault">Refresh</button>
           </div>
         </div>
       </div>
 
-      {/* Config */}
       <h2>Configuration</h2>
       <div className="card col">
         <div className="grid2" title="Game install root (auto for SM2).">
           <label>Game Root</label>
           <div className="row">
-            <input type="text" value={cfg.gameRoot} onChange={e => setCfg({ ...cfg, gameRoot: e.target.value })} />
+            <input value={cfg.gameRoot} onChange={e => setCfg({ ...cfg, gameRoot: e.target.value })} />
             <button onClick={() => browseInto("gameRoot")}>Browse…</button>
           </div>
         </div>
@@ -134,44 +168,48 @@ export default function App() {
         <div className="grid2" title="Game executable to launch.">
           <label>Game EXE</label>
           <div className="row">
-            <input type="text" value={cfg.gameExe} onChange={e => setCfg({ ...cfg, gameExe: e.target.value })} />
+            <input value={cfg.gameExe} onChange={e => setCfg({ ...cfg, gameExe: e.target.value })} />
             <button onClick={() => browseInto("gameExe")}>Browse…</button>
           </div>
         </div>
 
-        <div className="grid2" title="Folder the game actually reads mods from. We mirror selected mods here before launch.">
+        <div className="grid2" title="The game's real mods folder (e.g. …\\Space Marine 2\\client_pc\\root\\mods).">
           <label>Active Mods Path</label>
           <div className="row">
-            <input type="text" value={cfg.activeModsPath} onChange={e => setCfg({ ...cfg, activeModsPath: e.target.value })} />
+            <input value={cfg.activeModsPath} onChange={e => setCfg({ ...cfg, activeModsPath: e.target.value })} />
             <button onClick={() => browseInto("activeModsPath")}>Browse…</button>
           </div>
         </div>
 
-        <div className="grid2" title="Where your unpacked downloaded mods live (source of truth). Each mod should be a subfolder here.">
+        {/* IMMUTABLE: Mods Vault Path */}
+        <div className="grid2" title="Your library of mods; each mod is its own subfolder.">
           <label>Mod Vault Path</label>
           <div className="row">
-            <input type="text" value={cfg.modsVaultPath} onChange={e => setCfg({ ...cfg, modsVaultPath: e.target.value })} />
-            <button onClick={() => browseInto("modsVaultPath")}>Browse…</button>
+            <input value={cfg.modsVaultPath} readOnly />
+            {/* no Browse button (immutable) */}
           </div>
+          <div className="hint">Fixed for reliability. Changeable later via Advanced migration.</div>
         </div>
 
-        <div className="grid2" title="Backups of your mod-play save snapshots. We'll restore from here before launch and back up here on exit.">
+        {/* IMMUTABLE: Mod Play Vault Path */}
+        <div className="grid2" title="Backups of your mod-play save snapshots.">
           <label>Mod Play Vault Path</label>
           <div className="row">
-            <input type="text" value={cfg.modPlayVaultPath} onChange={e => setCfg({ ...cfg, modPlayVaultPath: e.target.value })} />
-            <button onClick={() => browseInto("modPlayVaultPath")}>Browse…</button>
+            <input value={cfg.modPlayVaultPath} readOnly />
+            {/* no Browse button (immutable) */}
           </div>
+          <div className="hint">Fixed for reliability. Changeable later via Advanced migration.</div>
         </div>
 
-        <div className="grid2" title="Live game save folder. For SM2: C:\Users\<you>\AppData\Local\Saber\Space Marine 2\storage\steam\user\<id>\Main\config">
+        <div className="grid2" title="Live game save folder — SM2: …\\Saber\\Space Marine 2\\storage\\steam\\user\\<id>\\Main\\config">
           <label>Save Data Path</label>
           <div className="row">
-            <input type="text" value={cfg.saveDataPath} onChange={e => setCfg({ ...cfg, saveDataPath: e.target.value })} />
+            <input value={cfg.saveDataPath} onChange={e => setCfg({ ...cfg, saveDataPath: e.target.value })} />
             <button onClick={() => browseInto("saveDataPath")}>Browse…</button>
           </div>
         </div>
 
-        <div className="grid2" title="Preferred method for placing files into Active Mods Path. Hardlink is fast and safe on Windows.">
+        <div className="grid2" title="Preferred method for placing files into the mods folder.">
           <label>Install Strategy</label>
           <div className="row">
             <select
@@ -186,55 +224,50 @@ export default function App() {
         </div>
       </div>
 
-      {/* Mods */}
-      <h2>Mods in Vault</h2>
+      <h2>Mods</h2>
       <div className="card">
         <div className="toolbar" style={{ marginBottom: 8 }}>
-          <button onClick={() => markAll(true)} title="Enable all mods.">All On</button>
-          <button onClick={() => markAll(false)} title="Disable all mods.">All Off</button>
-          <button
-            onClick={async () => {
-              const list = await window.api.listMods();
-              setMods(list);
-              setChecked(prev => {
-                const next = { ...prev };
-                for (const m of list) if (!(m in next)) next[m] = false;
-                for (const k of Object.keys(next)) if (!list.includes(k)) delete next[k];
-                return next;
-              });
-            }}
-            title="Re-read the Mod Vault folder for changes."
-          >
-            Refresh
-          </button>
+          <button onClick={() => markAll(true)}>All On</button>
+          <button onClick={() => markAll(false)}>All Off</button>
+          <span className="hint">Checked = in game mods; Unchecked + “🗃️ in vault” = installed not in use</span>
         </div>
 
         <div className="mods">
           {mods.length === 0 ? (
             <div className="hint">
-              No mod folders found in <b>{cfg.modsVaultPath || "(unset)"}</b>.<br />
-              Put each mod in its own subfolder inside the Mod Vault Path.
+              No mods found.<br />
+              Mods folder: <b>{cfg.activeModsPath || "(unset)"}</b><br />
+              Vault: <b>{cfg.modsVaultPath || "(unset)"}</b>
             </div>
           ) : (
             mods.map((m) => (
-              <label key={m} style={{ display: "block", padding: "4px 2px" }} title={m}>
+              <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px" }}>
                 <input
                   type="checkbox"
-                  checked={!!checked[m]}
-                  onChange={() => toggle(m)}
-                  style={{ marginRight: 8 }}
+                  checked={!!checked[m.name]}
+                  onChange={() => toggle(m.name)}
+                  title={
+                    m.inMods
+                      ? "Installed (in use) — uncheck to deactivate"
+                      : m.inVault
+                      ? "Installed (not in use) — check to enable"
+                      : "Not installed — import to vault first, then enable"
+                  }
                 />
-                {m}
-              </label>
+                <span style={{ flex: 1 }}>{m.name}</span>
+                <span className="hint">
+                  {m.inMods ? "✅ in mods" : m.inVault ? "🗃️ in vault" : "⚠️ nowhere"}
+                </span>
+                <button onClick={() => deleteEverywhere(m.name)} title="Delete from mods and vault">🗑️</button>
+              </div>
             ))
           )}
         </div>
       </div>
 
-      {/* Actions */}
       <h2>Actions</h2>
       <div className="card toolbar">
-        <button onClick={apply} title="Mirror selected mods into Active Mods Path without launching.">
+        <button onClick={apply} title="Mirror selected mods into the game's mods folder (no launch).">
           Apply (no launch)
         </button>
         <button
@@ -242,7 +275,7 @@ export default function App() {
           disabled={!pathsOk}
           title={
             pathsOk
-              ? "Restore latest mod-play save → apply mods → launch game → on exit back up save."
+              ? "Restore latest mod-play save → apply selected mods → launch → on exit back up live save."
               : "Set all key paths first."
           }
         >
