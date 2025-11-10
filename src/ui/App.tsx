@@ -1,6 +1,23 @@
-// src/ui/App.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import SetupWizard from "./SetupWizard";
+/**
+ * @file App.tsx
+ * @project Space Marine 2 Mod Loader
+ * @phase 3A — Path Integration
+ * @description
+ *  Renderer root for the main application UI.
+ *  - Loads configuration from main via preload bridge.
+ *  - Subscribes to `config:changed` and `mods:changed` to keep UI in sync.
+ *  - Merges and displays a list of mods from Active + Vault.
+ *  - Provides basic Apply/Launch/Manual Save actions (Phase 3A-safe).
+ *
+ * @developer-notes
+ *  - All main-process interactions go through `window.api` (preload).
+ *  - This component is resilient to partial/invalid data from IPC:
+ *      • `refreshMods` coerces non-array responses into an empty array.
+ *      • Row keys are stable across renders: `${name}:${inVault?'vault':'active'}`.
+ */
+
+import React, { useEffect, useState } from "react";
+import AdvancedSettingsMenu from "../renderer/views/AdvancedSettingsMenu";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
 type AppConfig = {
@@ -15,273 +32,349 @@ type AppConfig = {
   installStrategy: InstallStrategy;
 };
 
-type ModInfo = { name: string; inMods: boolean; inVault: boolean };
+type ModRow = { name: string; enabled: boolean; inVault: boolean };
 
 export default function App() {
-  const [cfg, setCfg] = useState<AppConfig | null>(null);
-  const [mods, setMods] = useState<ModInfo[]>([]);
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const api = (window as any).api;
 
-  const enabledList = useMemo(
-    () => Object.keys(checked).filter((k) => checked[k]),
-    [checked]
-  );
+  /** ------------------------------
+   *  Local state
+   * ------------------------------ */
+  const [cfg, setCfg] = useState<AppConfig>({
+    setupComplete: false,
+    autoDetected: false,
+    gameRoot: "",
+    gameExe: "",
+    activeModsPath: "",
+    modsVaultPath: "",
+    modPlayVaultPath: "",
+    saveDataPath: "",
+    installStrategy: "hardlink",
+  });
 
-  const refreshMods = async () => {
-    const items = await window.api.modsScan();
-    setMods(items);
-    setChecked(Object.fromEntries(items.map(m => [m.name, !!m.inMods])));
+  const [mods, setMods] = useState<ModRow[]>([]);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+
+  /** ------------------------------
+   *  Config handling
+   * ------------------------------ */
+
+  /**
+   * Fetch the latest config snapshot from main.
+   */
+  const refreshConfig = async () => {
+    const next = await api.getConfig();
+    setCfg(next);
   };
 
+  /** ------------------------------
+   *  Mods handling
+   * ------------------------------ */
+
+  /**
+   * Refresh mod rows from main (merged Active + Vault).
+   * Coerces unexpected IPC results to a safe empty array.
+   */
+  const refreshMods = async () => {
+    try {
+      const r = await api.listModsBoth();
+      const rows: ModRow[] = Array.isArray(r)
+        ? r.map((m) => ({
+            name: String(m?.name ?? ""),
+            enabled: !!m?.enabled,
+            inVault: !!m?.inVault,
+          }))
+        : [];
+      setMods(rows);
+    } catch (err) {
+      console.warn("mods refresh failed:", err);
+      setMods([]);
+    }
+  };
+
+  /**
+   * Subscribe to config + mods change events.
+   * Starts a lightweight watcher (Phase 3A) and cleans up on unmount.
+   */
   useEffect(() => {
+    let offConfig: (() => void) | undefined;
+    let offMods: (() => void) | undefined;
+
     (async () => {
-      const c = await window.api.getConfig();
-      setCfg(c);
-      if (c?.setupComplete) await refreshMods();
+      await refreshConfig();
+      await refreshMods();
+      await api.startModsWatch?.();
+
+      offConfig = api.onConfigChanged?.((nextCfg: AppConfig) => {
+        setCfg(nextCfg);
+        // Paths change → ensure we rescan immediately
+        refreshMods();
+      });
+
+      offMods = api.onModsChanged?.(() => {
+        // Debounced in main; safe to rescan directly
+        refreshMods();
+      });
     })();
+
+    return () => {
+      try {
+        offConfig && offConfig();
+        offMods && offMods();
+        api.stopModsWatch?.();
+      } catch {
+        /* ignore */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!cfg) return <div style={{ padding: 16 }}>Loading…</div>;
+  /**
+   * If either path changes (wizard/migration), rescan.
+   * This covers initial load and any subsequent path edits.
+   */
+  useEffect(() => {
+    refreshMods();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.activeModsPath, cfg.modsVaultPath]);
 
-  if (!cfg.setupComplete) {
-    return (
-      <SetupWizard
-        onDone={async () => {
-          const c = await window.api.getConfig();
-          setCfg(c);
-          await refreshMods();
-        }}
-      />
-    );
-  }
-
-  // --- UI handlers ---
-  const browseInto = async (field: keyof AppConfig) => {
-    const p = await window.api.browseFolder();
-    if (!p) return;
-    setCfg(prev => (prev ? { ...prev, [field]: p } : prev));
-  };
-
-  const saveConfig = async () => {
-    if (!cfg) return;
-    await window.api.setConfig(cfg);
-    await refreshMods();
-    alert("Config saved.");
-  };
-
-  const toggle = async (name: string) => {
-    const next = !checked[name];
-    setChecked(prev => ({ ...prev, [name]: next })); // optimistic
-    try {
-      if (next) {
-        // enabling requires mod to be in vault; installs into mods
-        await window.api.enableMod(name);
-      } else {
-        // disabling: ensure vault copy, then remove from mods
-        await window.api.disableMod(name);
-      }
-    } catch (err: any) {
-      alert(err?.message ?? String(err));
-      setChecked(prev => ({ ...prev, [name]: !next })); // revert
-    } finally {
-      await refreshMods();
-    }
-  };
-
-  const markAll = async (val: boolean) => {
-    // Bulk enable/disable using per-mod rules
-    for (const m of mods) {
-      const want = val;
-      const have = !!checked[m.name];
-      if (want && !have) {
-        try { await window.api.enableMod(m.name); } catch {}
-      } else if (!want && have) {
-        try { await window.api.disableMod(m.name); } catch {}
-      }
-    }
-    await refreshMods();
-  };
-
-  const deleteEverywhere = async (name: string) => {
-    if (!confirm(`Delete "${name}" from BOTH the game mods folder and the vault? This cannot be undone.`)) return;
-    await window.api.deleteMod(name);
-    await refreshMods();
-  };
-
-  const apply = async () => {
-    await window.api.applyMods(enabledList);
-    alert("Applied selected mods to the game's mods folder.");
-  };
-
-  const launchTracked = async () => {
-    const ok = await window.api.launchWithModsTracked(enabledList);
-    if (ok) alert("Game closed — live save backed up to mod_play_vault.");
-  };
-
+  /** ------------------------------
+   *  Derived flags
+   * ------------------------------ */
   const pathsOk =
+    !!cfg.gameRoot &&
     !!cfg.gameExe &&
     !!cfg.activeModsPath &&
     !!cfg.modsVaultPath &&
     !!cfg.modPlayVaultPath &&
     !!cfg.saveDataPath;
 
-  // --- Render ---
+  /** ------------------------------
+   *  UI actions
+   * ------------------------------ */
+  const markAll = (on: boolean) =>
+    setMods((m) => m.map((r) => ({ ...r, enabled: on })));
+
+  const toggle = (name: string) =>
+    setMods((rows) =>
+      rows.map((r) => (r.name === name ? { ...r, enabled: !r.enabled } : r))
+    );
+
+  const applyMods = async () => {
+    const enabled = mods.filter((m) => m.enabled).map((m) => m.name);
+    await api.applyMods(enabled);
+    await refreshMods();
+  };
+
+  const launchTracked = async () => {
+    const enabled = mods.filter((m) => m.enabled).map((m) => m.name);
+    await api.launchWithModsTracked(enabled);
+    await refreshMods();
+  };
+
+  const manualGameDataSave = async () => {
+    const ev = await api.manualGameDataSave();
+    alert(
+      `Saved ${ev.files} files (${(ev.bytes / 1024 / 1024).toFixed(
+        1
+      )} MB) to mod_play_vault.`
+    );
+  };
+
+  /** ------------------------------
+   *  Inline styles (keep minimal)
+   * ------------------------------ */
+  const card: React.CSSProperties = {
+    border: "1px solid #333",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  };
+  const toolbar: React.CSSProperties = {
+    display: "flex",
+    gap: 8,
+    justifyContent: "flex-end",
+    marginBottom: 8,
+  };
+  const btn: React.CSSProperties = {
+    padding: "6px 10px",
+    borderRadius: 8,
+    border: "1px solid #666",
+    background: "#444",
+    color: "#fff",
+    cursor: "pointer",
+  };
+  const zebra = (i: number): React.CSSProperties =>
+    i % 2 ? { background: "rgba(255,255,255,0.04)" } : {};
+
+  /** ------------------------------
+   *  Render
+   * ------------------------------ */
   return (
     <div className="wrap" style={{ padding: 16 }}>
       <h1>WH40K Mod Manager</h1>
 
-      <div className="card">
-        <div className="row" style={{ justifyContent: "space-between" }}>
+      {/* TOP CARD — Mods list with watchers + merged scan */}
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
           <div>
-            <div className="hint">
-              {cfg.autoDetected ? (
-                <span className="ok">Auto-detected defaults where possible.</span>
-              ) : (
-                <span className="warn">No auto-detection captured.</span>
-              )}
+            <div style={{ color: "#7bd17b", marginBottom: 4 }}>
+              {cfg.autoDetected
+                ? "Auto-detected defaults where possible."
+                : "No auto-detection captured."}
             </div>
-            <div className="hint">
-              {pathsOk ? (
-                <span className="ok">Ready: All key paths are set.</span>
-              ) : (
-                <span className="err">Set all folders below before using “Launch (Tracked)”.</span>
-              )}
-            </div>
-          </div>
-          <div className="toolbar">
-            <button onClick={saveConfig}>Save Config</button>
-            <button onClick={refreshMods} title="Re-scan mods & vault">Refresh</button>
-          </div>
-        </div>
-      </div>
-
-      <h2>Configuration</h2>
-      <div className="card col">
-        <div className="grid2" title="Game install root (auto for SM2).">
-          <label>Game Root</label>
-          <div className="row">
-            <input value={cfg.gameRoot} onChange={e => setCfg({ ...cfg, gameRoot: e.target.value })} />
-            <button onClick={() => browseInto("gameRoot")}>Browse…</button>
-          </div>
-        </div>
-
-        <div className="grid2" title="Game executable to launch.">
-          <label>Game EXE</label>
-          <div className="row">
-            <input value={cfg.gameExe} onChange={e => setCfg({ ...cfg, gameExe: e.target.value })} />
-            <button onClick={() => browseInto("gameExe")}>Browse…</button>
-          </div>
-        </div>
-
-        <div className="grid2" title="The game's real mods folder (e.g. …\\Space Marine 2\\client_pc\\root\\mods).">
-          <label>Active Mods Path</label>
-          <div className="row">
-            <input value={cfg.activeModsPath} onChange={e => setCfg({ ...cfg, activeModsPath: e.target.value })} />
-            <button onClick={() => browseInto("activeModsPath")}>Browse…</button>
-          </div>
-        </div>
-
-        {/* IMMUTABLE: Mods Vault Path */}
-        <div className="grid2" title="Your library of mods; each mod is its own subfolder.">
-          <label>Mod Vault Path</label>
-          <div className="row">
-            <input value={cfg.modsVaultPath} readOnly />
-            {/* no Browse button (immutable) */}
-          </div>
-          <div className="hint">Fixed for reliability. Changeable later via Advanced migration.</div>
-        </div>
-
-        {/* IMMUTABLE: Mod Play Vault Path */}
-        <div className="grid2" title="Backups of your mod-play save snapshots.">
-          <label>Mod Play Vault Path</label>
-          <div className="row">
-            <input value={cfg.modPlayVaultPath} readOnly />
-            {/* no Browse button (immutable) */}
-          </div>
-          <div className="hint">Fixed for reliability. Changeable later via Advanced migration.</div>
-        </div>
-
-        <div className="grid2" title="Live game save folder — SM2: …\\Saber\\Space Marine 2\\storage\\steam\\user\\<id>\\Main\\config">
-          <label>Save Data Path</label>
-          <div className="row">
-            <input value={cfg.saveDataPath} onChange={e => setCfg({ ...cfg, saveDataPath: e.target.value })} />
-            <button onClick={() => browseInto("saveDataPath")}>Browse…</button>
-          </div>
-        </div>
-
-        <div className="grid2" title="Preferred method for placing files into the mods folder.">
-          <label>Install Strategy</label>
-          <div className="row">
-            <select
-              value={cfg.installStrategy}
-              onChange={e => setCfg({ ...cfg, installStrategy: e.target.value as InstallStrategy })}
+            <div
+              style={{
+                color: pathsOk ? "#7bd17b" : "#ff9f9f",
+                marginBottom: 8,
+              }}
             >
-              <option value="hardlink">hardlink (fast, default)</option>
-              <option value="symlink">symlink (may require permission)</option>
-              <option value="copy">copy (slowest, safest)</option>
-            </select>
+              {pathsOk
+                ? "Ready: All key paths are set."
+                : "Set all key paths in Advanced Settings before launching."}
+            </div>
+          </div>
+
+          <div style={toolbar}>
+            <button
+              style={btn}
+              onClick={manualGameDataSave}
+              title="Copy platform config/save into mod_play_vault now"
+            >
+              Manual game data save
+            </button>
+            <button
+              style={btn}
+              onClick={refreshMods}
+              title="Re-scan Active Mods + Mods Vault"
+            >
+              Refresh
+            </button>
+            <button style={btn} onClick={() => setShowAdvanced(true)}>
+              Advanced Settings
+            </button>
           </div>
         </div>
-      </div>
 
-      <h2>Mods</h2>
-      <div className="card">
-        <div className="toolbar" style={{ marginBottom: 8 }}>
-          <button onClick={() => markAll(true)}>All On</button>
-          <button onClick={() => markAll(false)}>All Off</button>
-          <span className="hint">Checked = in game mods; Unchecked + “🗃️ in vault” = installed not in use</span>
-        </div>
+        {/* Mods table (zebra rows) */}
+        <div
+          style={{
+            border: "1px solid #444",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr auto",
+              gap: 8,
+              padding: 8,
+              background: "rgba(255,255,255,0.06)",
+              borderBottom: "1px solid #3a3a3a",
+            }}
+          >
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={btn} onClick={() => markAll(true)}>
+                All On
+              </button>
+              <button style={btn} onClick={() => markAll(false)}>
+                All Off
+              </button>
+            </div>
+            <div style={{ color: "#bdbdbd", alignSelf: "center" }}>
+              Checked = in game mods; Unchecked + “🗃️ in vault” = installed not
+              in use
+            </div>
+            <div />
+          </div>
 
-        <div className="mods">
-          {mods.length === 0 ? (
-            <div className="hint">
-              No mods found.<br />
-              Mods folder: <b>{cfg.activeModsPath || "(unset)"}</b><br />
-              Vault: <b>{cfg.modsVaultPath || "(unset)"}</b>
+          {Array.isArray(mods) && mods.length === 0 ? (
+            <div style={{ padding: 10, color: "#bdbdbd" }}>
+              No mods found. Refresh after adding mods to your Mods Vault or
+              Active Mods folder.
             </div>
           ) : (
-            mods.map((m) => (
-              <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px" }}>
+            (mods ?? []).map((m, i) => (
+              <div
+                key={`${m.name}:${m.inVault ? "vault" : "active"}`}
+                style={{
+                  ...zebra(i),
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 8,
+                  alignItems: "center",
+                  padding: "8px 10px",
+                  borderBottom: "1px solid #2f2f2f",
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={!!checked[m.name]}
+                  checked={!!m.enabled}
                   onChange={() => toggle(m.name)}
-                  title={
-                    m.inMods
-                      ? "Installed (in use) — uncheck to deactivate"
-                      : m.inVault
-                      ? "Installed (not in use) — check to enable"
-                      : "Not installed — import to vault first, then enable"
-                  }
                 />
-                <span style={{ flex: 1 }}>{m.name}</span>
-                <span className="hint">
-                  {m.inMods ? "✅ in mods" : m.inVault ? "🗃️ in vault" : "⚠️ nowhere"}
-                </span>
-                <button onClick={() => deleteEverywhere(m.name)} title="Delete from mods and vault">🗑️</button>
+                <div>{m.name}</div>
+                <div style={{ textAlign: "right" }}>
+                  {!m.enabled && m.inVault && (
+                    <span title="Installed in vault">🗃️ in vault</span>
+                  )}
+                </div>
               </div>
             ))
           )}
         </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button style={btn} onClick={applyMods} disabled={!pathsOk}>
+            Apply (no launch)
+          </button>
+          <button style={btn} onClick={launchTracked} disabled={!pathsOk}>
+            Launch (Tracked)
+          </button>
+        </div>
       </div>
 
-      <h2>Actions</h2>
-      <div className="card toolbar">
-        <button onClick={apply} title="Mirror selected mods into the game's mods folder (no launch).">
-          Apply (no launch)
-        </button>
-        <button
-          onClick={launchTracked}
-          disabled={!pathsOk}
-          title={
-            pathsOk
-              ? "Restore latest mod-play save → apply selected mods → launch → on exit back up live save."
-              : "Set all key paths first."
-          }
+      {/* Advanced Settings modal */}
+      {showAdvanced && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+          onClick={() => setShowAdvanced(false)}
         >
-          Launch (Tracked)
-        </button>
-      </div>
+          <div
+            style={{
+              width: "90vw",
+              maxWidth: 900,
+              maxHeight: "90vh",
+              overflow: "auto",
+              background: "#fff",
+              borderRadius: 12,
+              padding: 16,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <h2 style={{ margin: 0, color: "#111" }}>Advanced Settings</h2>
+              <button onClick={() => setShowAdvanced(false)}>Close</button>
+            </div>
+            <AdvancedSettingsMenu />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

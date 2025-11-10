@@ -59,6 +59,7 @@ userData/
 logs/
 cache/
 tmp/
+scripts/
 
 # Electron builder outputs
 /dist_electron/

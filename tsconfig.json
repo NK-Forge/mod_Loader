@@ -11,5 +11,13 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["electron", "src"]
+  "include": [
+    "electron",
+    "src",
+    "src/**/*",
+    "src/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

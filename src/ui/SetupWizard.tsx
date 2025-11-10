@@ -1,3 +1,19 @@
+/**
+ * @file SetupWizard.tsx
+ * @project Space Marine 2 Mod Loader
+ * @phase 3A — Path Integration
+ * @description
+ *  First-run setup flow for platform/game paths and vault locations.
+ *  - Detects common defaults (best-effort).
+ *  - Allows the user to confirm/edit writable paths.
+ *  - Marks setup complete via `completeSetup`, which persists config
+ *    and triggers `config:changed` broadcast in the main process.
+ *
+ * @developer-notes
+ *  - Vault paths are immutable during wizard for reliability.
+ *  - Advanced migration (changing vaults) is planned for later phases.
+ */
+
 import React, { useEffect, useState } from "react";
 
 type Paths = {
@@ -18,6 +34,9 @@ type FieldOpts = {
   readOnly?: boolean;
 };
 
+/**
+ * Simple labeled input with optional Browse and hint.
+ */
 const Field = ({ label, value, onPick, onChange, hint, readOnly }: FieldOpts) => (
   <div style={{ marginBottom: 10 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -46,11 +65,14 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   const [status, setStatus] = useState<string>("Detecting default paths…");
   const [canContinue, setCanContinue] = useState(false);
 
+  /**
+   * Initial detection + load persisted config to seed the wizard.
+   * Vaults are immutable during wizard for reliability.
+   */
   useEffect(() => {
     (async () => {
       const det = await window.api.detectPaths();
       const cfg = await window.api.getConfig();
-      // Vault paths come from app data defaults and are immutable in the wizard
       setPaths({
         gameRoot: det.gameRoot || cfg.gameRoot || "",
         gameExe: det.gameExe || cfg.gameExe || "",
@@ -63,6 +85,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     })();
   }, []);
 
+  /**
+   * Enable Finish only once all required paths are filled in.
+   */
   useEffect(() => {
     const ok =
       paths.gameExe &&
@@ -73,12 +98,19 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     setCanContinue(!!ok);
   }, [paths]);
 
+  /**
+   * Folder picker helper for editable fields.
+   */
   async function pick(key: keyof Paths) {
     const p = await window.api.browseFolder();
     if (!p) return;
     setPaths(s => ({ ...s, [key]: p }));
   }
 
+  /**
+   * Validate write access to critical directories before finishing.
+   * Alerts the user if any path is not writable.
+   */
   async function testAll() {
     const checks: Array<[keyof Paths, string]> = [
       ["activeModsPath", "Active Mods"],
@@ -97,17 +129,26 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     if (all) alert("All writable ✅");
   }
 
+  /**
+   * Ensure directories exist, persist the configuration,
+   * mark `setupComplete`, and hand control back to the App.
+   * @fires config:changed (main broadcasts to renderer)
+   */
   async function finish() {
     await window.api.ensureDirs([
       paths.activeModsPath,
       paths.modsVaultPath,
       paths.modPlayVaultPath,
     ]);
-    await window.api.completeSetup({
+
+    const finalized = {
       ...paths,
-      installStrategy: "hardlink",
+      installStrategy: "hardlink" as const,
       autoDetected: true,
-    });
+      setupComplete: true,
+    };
+
+    await window.api.completeSetup(finalized as any);
     onDone();
   }
 
