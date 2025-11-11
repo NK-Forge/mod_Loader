@@ -1,19 +1,7 @@
 /**
  * @file App.tsx
  * @project Space Marine 2 Mod Loader
- * @phase 3A — Path Integration
- * @description
- *  Renderer root for the main application UI.
- *  - Loads configuration from main via preload bridge.
- *  - Subscribes to `config:changed` and `mods:changed` to keep UI in sync.
- *  - Merges and displays a list of mods from Active + Vault.
- *  - Provides basic Apply/Launch/Manual Save actions (Phase 3A-safe).
- *
- * @developer-notes
- *  - All main-process interactions go through `window.api` (preload).
- *  - This component is resilient to partial/invalid data from IPC:
- *      • `refreshMods` coerces non-array responses into an empty array.
- *      • Row keys are stable across renders: `${name}:${inVault?'vault':'active'}`.
+ * @phase 3B — UI wiring for Apply(Reconcile) + Delete
  */
 
 import React, { useEffect, useState } from "react";
@@ -37,9 +25,6 @@ type ModRow = { name: string; enabled: boolean; inVault: boolean };
 export default function App() {
   const api = (window as any).api;
 
-  /** ------------------------------
-   *  Local state
-   * ------------------------------ */
   const [cfg, setCfg] = useState<AppConfig>({
     setupComplete: false,
     autoDetected: false,
@@ -55,26 +40,11 @@ export default function App() {
   const [mods, setMods] = useState<ModRow[]>([]);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
 
-  /** ------------------------------
-   *  Config handling
-   * ------------------------------ */
-
-  /**
-   * Fetch the latest config snapshot from main.
-   */
   const refreshConfig = async () => {
     const next = await api.getConfig();
     setCfg(next);
   };
 
-  /** ------------------------------
-   *  Mods handling
-   * ------------------------------ */
-
-  /**
-   * Refresh mod rows from main (merged Active + Vault).
-   * Coerces unexpected IPC results to a safe empty array.
-   */
   const refreshMods = async () => {
     try {
       const r = await api.listModsBoth();
@@ -92,10 +62,6 @@ export default function App() {
     }
   };
 
-  /**
-   * Subscribe to config + mods change events.
-   * Starts a lightweight watcher (Phase 3A) and cleans up on unmount.
-   */
   useEffect(() => {
     let offConfig: (() => void) | undefined;
     let offMods: (() => void) | undefined;
@@ -107,12 +73,10 @@ export default function App() {
 
       offConfig = api.onConfigChanged?.((nextCfg: AppConfig) => {
         setCfg(nextCfg);
-        // Paths change → ensure we rescan immediately
         refreshMods();
       });
 
       offMods = api.onModsChanged?.(() => {
-        // Debounced in main; safe to rescan directly
         refreshMods();
       });
     })();
@@ -122,25 +86,16 @@ export default function App() {
         offConfig && offConfig();
         offMods && offMods();
         api.stopModsWatch?.();
-      } catch {
-        /* ignore */
-      }
+      } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * If either path changes (wizard/migration), rescan.
-   * This covers initial load and any subsequent path edits.
-   */
   useEffect(() => {
     refreshMods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.activeModsPath, cfg.modsVaultPath]);
 
-  /** ------------------------------
-   *  Derived flags
-   * ------------------------------ */
   const pathsOk =
     !!cfg.gameRoot &&
     !!cfg.gameExe &&
@@ -149,9 +104,6 @@ export default function App() {
     !!cfg.modPlayVaultPath &&
     !!cfg.saveDataPath;
 
-  /** ------------------------------
-   *  UI actions
-   * ------------------------------ */
   const markAll = (on: boolean) =>
     setMods((m) => m.map((r) => ({ ...r, enabled: on })));
 
@@ -162,13 +114,24 @@ export default function App() {
 
   const applyMods = async () => {
     const enabled = mods.filter((m) => m.enabled).map((m) => m.name);
-    await api.applyMods(enabled);
+    const res = await api.applyMods(enabled);
+    if (!res?.ok) alert(res?.message || "Apply failed");
+    await refreshMods();
+  };
+
+  const deleteOne = async (name: string) => {
+    const yes = confirm(
+      `Delete "${name}" from Active/Vault?\n(We will back it up under mod_play_vault/ops/trash)`
+    );
+    if (!yes) return;
+    const res = await api.deleteMod(name);
+    if (!res?.ok) alert((res as any)?.message || "Delete failed");
     await refreshMods();
   };
 
   const launchTracked = async () => {
     const enabled = mods.filter((m) => m.enabled).map((m) => m.name);
-    await api.launchWithModsTracked(enabled);
+    await api.launchWithModsTracked?.(enabled);
     await refreshMods();
   };
 
@@ -181,9 +144,6 @@ export default function App() {
     );
   };
 
-  /** ------------------------------
-   *  Inline styles (keep minimal)
-   * ------------------------------ */
   const card: React.CSSProperties = {
     border: "1px solid #333",
     borderRadius: 10,
@@ -207,14 +167,10 @@ export default function App() {
   const zebra = (i: number): React.CSSProperties =>
     i % 2 ? { background: "rgba(255,255,255,0.04)" } : {};
 
-  /** ------------------------------
-   *  Render
-   * ------------------------------ */
   return (
     <div className="wrap" style={{ padding: 16 }}>
-      <h1>WH40K Mod Manager</h1>
+      <h1>WH40K: Space Marine 2 Mod Manager</h1>
 
-      {/* TOP CARD — Mods list with watchers + merged scan */}
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <div>
@@ -232,6 +188,16 @@ export default function App() {
               {pathsOk
                 ? "Ready: All key paths are set."
                 : "Set all key paths in Advanced Settings before launching."}
+            </div>
+          </div>
+          <div
+            style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.4, marginBottom: 8 }}
+          >
+            <div>
+              <strong>Active Mods:</strong> {cfg.activeModsPath || "(not set)"}
+            </div>
+            <div>
+              <strong>Mods Vault:</strong> {cfg.modsVaultPath || "(not set)"}
             </div>
           </div>
 
@@ -256,7 +222,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mods table (zebra rows) */}
         <div
           style={{
             border: "1px solid #444",
@@ -314,10 +279,26 @@ export default function App() {
                   onChange={() => toggle(m.name)}
                 />
                 <div>{m.name}</div>
-                <div style={{ textAlign: "right" }}>
+                <div style={{ textAlign: "right", display: "flex", gap: 8, justifyContent: "flex-end" }}>
                   {!m.enabled && m.inVault && (
                     <span title="Installed in vault">🗃️ in vault</span>
                   )}
+                  <button
+                    style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                    title="Delete mod"
+                    onClick={async () => {
+                      const yes = confirm(`Permanently delete "${m.name}" from your computer?\nThis cannot be undone.`);
+                      if (!yes) return;
+                      const res = await (window as any).api.deleteMod(m.name);
+                      if (!res?.ok) {
+                        alert(res?.message || "Delete failed - make sure the game is closed.");
+                      } else {
+                        await refreshMods();
+                      }
+                    }}
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
             ))
@@ -334,7 +315,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Advanced Settings modal */}
       {showAdvanced && (
         <div
           style={{
@@ -371,7 +351,13 @@ export default function App() {
               <h2 style={{ margin: 0, color: "#111" }}>Advanced Settings</h2>
               <button onClick={() => setShowAdvanced(false)}>Close</button>
             </div>
-            <AdvancedSettingsMenu />
+            {AdvancedSettingsMenu ? (
+              <AdvancedSettingsMenu />
+            ) : (
+              <div style={{ color: "#111" }}>
+                Advanced Settings component not found.
+              </div>
+            )}
           </div>
         </div>
       )}

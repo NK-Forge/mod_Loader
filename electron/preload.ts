@@ -1,25 +1,12 @@
 /**
- * @file preload.ts
- * @project Space Marine 2 Mod Loader
- * @phase 3A — Path Integration
- * @description
- *  Secure renderer bridge. Exposes a minimal, typed API for the renderer
- *  to interact with the main process via IPC. All functions are developer-facing
- *  and intended to be stable contracts across phases.
- *
- *  Notes:
- *  - Only whitelisted methods are exposed; there is no direct Node access.
- *  - Event subscriptions return an unsubscribe function for cleanup.
+ * @file electron/preload.ts
+ * Exposes a typed `window.api` bridge to the renderer.
  */
 
-import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
-/** ------------------------------
- *  Types (keep in sync with main)
- * ------------------------------ */
 type InstallStrategy = "hardlink" | "symlink" | "copy";
-
-export interface AppConfig {
+type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
   gameRoot: string;
@@ -29,190 +16,99 @@ export interface AppConfig {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
-}
+};
 
-export type ModRow = { name: string; enabled: boolean; inVault: boolean };
+type ModRow = { name: string; enabled: boolean; inVault: boolean };
 
-/** ------------------------------
- *  IPC channel constants
- * ------------------------------ */
+type ImmutablePaths = {
+  modsVaultPath: string;
+  modPlayVaultPath: string;
+};
+
 const CH = {
-  // Config
   CONFIG_GET: "config:get",
   CONFIG_SET: "config:set",
   CONFIG_COMPLETE: "config:completeSetup",
-  CONFIG_CHANGED: "config:changed",
+  CONFIG_IMMUTABLE: "config:getImmutablePaths",
 
-  // FS / Paths
   BROWSE_FOLDER: "browse:folder",
   FS_ENSURE_DIRS: "fs:ensureDirs",
   FS_TEST_WRITE: "fs:testWrite",
+
   DETECT_PATHS: "detect:paths",
 
-  // Mods
   MODS_LIST_BOTH: "mods:listBoth",
   MODS_APPLY: "mods:apply",
-  MODS_LAUNCH_TRACKED: "mods:launchTracked",
+  MODS_DELETE: "mods:delete",
   MODS_MANUAL_SAVE: "mods:manualGameDataSave",
   MODS_START_WATCH: "mods:startWatch",
   MODS_STOP_WATCH: "mods:stopWatch",
-  MODS_CHANGED: "mods:changed",
+
+  EVT_CONFIG_CHANGED: "config:changed",
+  EVT_MODS_CHANGED: "mods:changed",
 } as const;
 
-/** Utility: wrap `ipcRenderer.on` with a typed unsubscribe */
-function subscribe(channel: string, cb: (...args: any[]) => void) {
-  const handler = (_evt: IpcRendererEvent, ...args: any[]) => cb(...args);
-  ipcRenderer.on(channel, handler);
-  return () => ipcRenderer.removeListener(channel, handler);
-}
-
-/** ------------------------------
- *  Exposed API surface
- * ------------------------------ */
-const api = {
-  /**
-   * Get the current application configuration.
-   * @returns Promise<AppConfig>
-   */
+contextBridge.exposeInMainWorld("api", {
+  // ---- Config
   getConfig(): Promise<AppConfig> {
     return ipcRenderer.invoke(CH.CONFIG_GET);
   },
-
-  /**
-   * Partially update configuration and persist it.
-   * @param next Partial<AppConfig>
-   * @returns Promise<AppConfig> resolved with updated config
-   */
   setConfig(next: Partial<AppConfig>): Promise<AppConfig> {
     return ipcRenderer.invoke(CH.CONFIG_SET, next);
   },
-
-  /**
-   * Complete initial setup from the wizard and mark as setupComplete.
-   * @param cfg AppConfig
-   * @returns Promise<AppConfig> resolved with finalized config
-   * @fires config:changed
-   */
-  completeSetup(cfg: AppConfig): Promise<AppConfig> {
-    return ipcRenderer.invoke(CH.CONFIG_COMPLETE, cfg);
+  completeSetup(next: AppConfig): Promise<AppConfig> {
+    return ipcRenderer.invoke(CH.CONFIG_COMPLETE, next);
+  },
+  getImmutablePaths(): Promise<ImmutablePaths> {
+    return ipcRenderer.invoke(CH.CONFIG_IMMUTABLE);
   },
 
-  /**
-   * Subscribe to config changes broadcast by main.
-   * @param cb (cfg: AppConfig) => void
-   * @returns unsubscribe function
-   */
-  onConfigChanged(cb: (cfg: AppConfig) => void): () => void {
-    return subscribe(CH.CONFIG_CHANGED, cb);
-  },
-
-  /* ---------- Paths / FS helpers ---------- */
-
-  /**
-   * Show a folder picker dialog (directory only).
-   * @returns Promise<string | null> selected absolute path or null if canceled
-   */
+  // ---- FS / Browse
   browseFolder(): Promise<string | null> {
     return ipcRenderer.invoke(CH.BROWSE_FOLDER);
   },
-
-  /**
-   * Ensure a list of directories exist (mkdir -p).
-   * @param dirs string[]
-   * @returns Promise<boolean>
-   */
   ensureDirs(dirs: string[]): Promise<boolean> {
     return ipcRenderer.invoke(CH.FS_ENSURE_DIRS, dirs);
   },
-
-  /**
-   * Test write access to a directory by writing/removing a temp file.
-   * @param dir string
-   * @returns Promise<boolean>
-   */
   testWrite(dir: string): Promise<boolean> {
     return ipcRenderer.invoke(CH.FS_TEST_WRITE, dir);
   },
 
-  /**
-   * Attempt to auto-detect common install and data paths.
-   * @returns Promise<Partial<AppConfig>> subset with discovered paths
-   */
+  // ---- Detect
   detectPaths(): Promise<Partial<AppConfig>> {
     return ipcRenderer.invoke(CH.DETECT_PATHS);
   },
 
-  /* ---------- Mods API ---------- */
-
-  /**
-   * List a merged view of Active Mods + Mods Vault.
-   * Enabled = present in active; inVault = present in vault.
-   * @returns Promise<ModRow[]>
-   */
+  // ---- Mods
   listModsBoth(): Promise<ModRow[]> {
     return ipcRenderer.invoke(CH.MODS_LIST_BOTH);
   },
-
-  /**
-   * Apply currently enabled mods using selected install strategy.
-   * Phase 3A: implementation may be a stub.
-   * @param enabled string[] names
-   * @returns Promise<{ ok: boolean }>
-   */
-  applyMods(enabled: string[]): Promise<{ ok: boolean }> {
-    return ipcRenderer.invoke(CH.MODS_APPLY, enabled);
+  applyMods(enabledNames: string[]): Promise<{ ok: boolean; message?: string }> {
+    return ipcRenderer.invoke(CH.MODS_APPLY, enabledNames);
   },
-
-  /**
-   * Launch the game with tracking enabled.
-   * Phase 3A: implementation may be a stub.
-   * @param enabled string[]
-   * @returns Promise<{ ok: boolean }>
-   */
-  launchWithModsTracked(enabled: string[]): Promise<{ ok: boolean }> {
-    return ipcRenderer.invoke(CH.MODS_LAUNCH_TRACKED, enabled);
+  deleteMod(name: string): Promise<{ ok: true; trashedAt: string } | { ok: false; message: string }> {
+    return ipcRenderer.invoke(CH.MODS_DELETE, name);
   },
-
-  /**
-   * Manually snapshot game data to the mod_play_vault.
-   * Phase 3A: implementation may be a stub.
-   * @returns Promise<{ files: number, bytes: number }>
-   */
-  manualGameDataSave(): Promise<{ files: number; bytes: number }> {
+  manualGameDataSave(): Promise<{ files: number; bytes: number; error?: string }> {
     return ipcRenderer.invoke(CH.MODS_MANUAL_SAVE);
   },
 
-  /**
-   * Start file watchers (debounced). Phase 3A: lightweight.
-   * @returns Promise<boolean>
-   */
   startModsWatch(): Promise<boolean> {
     return ipcRenderer.invoke(CH.MODS_START_WATCH);
   },
-
-  /**
-   * Stop file watchers.
-   * @returns Promise<boolean>
-   */
   stopModsWatch(): Promise<boolean> {
     return ipcRenderer.invoke(CH.MODS_STOP_WATCH);
   },
 
-  /**
-   * Subscribe to debounced mod-change notifications.
-   * @param cb () => void
-   * @returns unsubscribe
-   */
-  onModsChanged(cb: () => void): () => void {
-    return subscribe(CH.MODS_CHANGED, cb);
+  // ---- Events
+  onConfigChanged(handler: (cfg: AppConfig) => void) {
+    const fn = (_: any, payload: AppConfig) => handler(payload);
+    ipcRenderer.on(CH.EVT_CONFIG_CHANGED, fn);
+    return () => ipcRenderer.off(CH.EVT_CONFIG_CHANGED, fn);
   },
-} as const;
-
-/** Augment `window` with a typed `api` namespace for the renderer. */
-declare global {
-  interface Window {
-    api: typeof api;
-  }
-}
-
-contextBridge.exposeInMainWorld("api", api);
+  onModsChanged(handler: () => void) {
+    const fn = () => handler();
+    ipcRenderer.on(CH.EVT_MODS_CHANGED, fn);
+    return () => ipcRenderer.off(CH.EVT_MODS_CHANGED, fn);
+  },
+});
