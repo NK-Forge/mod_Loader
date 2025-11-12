@@ -1,6 +1,6 @@
 /**
  * @file electron/preload.ts
- * Exposes a typed `window.api` bridge to the renderer.
+ * Exposes a typed window.api bridge.
  */
 
 import { contextBridge, ipcRenderer } from "electron";
@@ -41,66 +41,50 @@ const CH = {
   MODS_APPLY: "mods:apply",
   MODS_DELETE: "mods:delete",
   MODS_MANUAL_SAVE: "mods:manualGameDataSave",
-  MODS_START_WATCH: "mods:startWatch",
-  MODS_STOP_WATCH: "mods:stopWatch",
+
+  GAME_LAUNCH_MOD: "game:launchModPlay",
+  GAME_LAUNCH_VAN: "game:launchVanilla",
 
   EVT_CONFIG_CHANGED: "config:changed",
   EVT_MODS_CHANGED: "mods:changed",
 } as const;
 
 contextBridge.exposeInMainWorld("api", {
-  // ---- Config
-  getConfig(): Promise<AppConfig> {
-    return ipcRenderer.invoke(CH.CONFIG_GET);
-  },
-  setConfig(next: Partial<AppConfig>): Promise<AppConfig> {
-    return ipcRenderer.invoke(CH.CONFIG_SET, next);
-  },
-  completeSetup(next: AppConfig): Promise<AppConfig> {
-    return ipcRenderer.invoke(CH.CONFIG_COMPLETE, next);
-  },
-  getImmutablePaths(): Promise<ImmutablePaths> {
-    return ipcRenderer.invoke(CH.CONFIG_IMMUTABLE);
-  },
+  // Config
+  getConfig(): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_GET); },
+  setConfig(next: Partial<AppConfig>): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_SET, next); },
+  completeSetup(next: AppConfig): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_COMPLETE, next); },
+  getImmutablePaths(): Promise<ImmutablePaths> { return ipcRenderer.invoke(CH.CONFIG_IMMUTABLE); },
 
-  // ---- FS / Browse
-  browseFolder(): Promise<string | null> {
-    return ipcRenderer.invoke(CH.BROWSE_FOLDER);
-  },
-  ensureDirs(dirs: string[]): Promise<boolean> {
-    return ipcRenderer.invoke(CH.FS_ENSURE_DIRS, dirs);
-  },
-  testWrite(dir: string): Promise<boolean> {
-    return ipcRenderer.invoke(CH.FS_TEST_WRITE, dir);
-  },
+  // FS
+  browseFolder(): Promise<string | null> { return ipcRenderer.invoke(CH.BROWSE_FOLDER); },
+  ensureDirs(dirs: string[]): Promise<boolean> { return ipcRenderer.invoke(CH.FS_ENSURE_DIRS, dirs); },
+  testWrite(dir: string): Promise<boolean> { return ipcRenderer.invoke(CH.FS_TEST_WRITE, dir); },
 
-  // ---- Detect
-  detectPaths(): Promise<Partial<AppConfig>> {
-    return ipcRenderer.invoke(CH.DETECT_PATHS);
-  },
+  // Detect
+  detectPaths(): Promise<Partial<AppConfig>> { return ipcRenderer.invoke(CH.DETECT_PATHS); },
 
-  // ---- Mods
-  listModsBoth(): Promise<ModRow[]> {
-    return ipcRenderer.invoke(CH.MODS_LIST_BOTH);
-  },
+  // Mods
+  listModsBoth(): Promise<ModRow[]> { return ipcRenderer.invoke(CH.MODS_LIST_BOTH); },
   applyMods(enabledNames: string[]): Promise<{ ok: boolean; message?: string }> {
     return ipcRenderer.invoke(CH.MODS_APPLY, enabledNames);
   },
-  deleteMod(name: string): Promise<{ ok: true; trashedAt: string } | { ok: false; message: string }> {
+  deleteMod(name: string): Promise<{ ok: boolean; message?: string }> {
     return ipcRenderer.invoke(CH.MODS_DELETE, name);
   },
   manualGameDataSave(): Promise<{ files: number; bytes: number; error?: string }> {
     return ipcRenderer.invoke(CH.MODS_MANUAL_SAVE);
   },
 
-  startModsWatch(): Promise<boolean> {
-    return ipcRenderer.invoke(CH.MODS_START_WATCH);
+  // Launch
+  launchModPlay(): Promise<{ ok: boolean; pid?: number; message?: string }> {
+    return ipcRenderer.invoke(CH.GAME_LAUNCH_MOD);
   },
-  stopModsWatch(): Promise<boolean> {
-    return ipcRenderer.invoke(CH.MODS_STOP_WATCH);
+  launchVanillaPlay(): Promise<{ ok: boolean; pid?: number; message?: string }> {
+    return ipcRenderer.invoke(CH.GAME_LAUNCH_VAN);
   },
 
-  // ---- Events
+  // Events
   onConfigChanged(handler: (cfg: AppConfig) => void) {
     const fn = (_: any, payload: AppConfig) => handler(payload);
     ipcRenderer.on(CH.EVT_CONFIG_CHANGED, fn);

@@ -1,6 +1,7 @@
 # Node / build artifacts
 node_modules/
 dist/
+dist-electron/
 out/
 build/
 .DS_Store
@@ -12,6 +13,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log
 
 # Vite / Electron temp
 .vite/

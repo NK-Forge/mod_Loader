@@ -48,7 +48,7 @@ export default function AdvancedSettingsMenu() {
           color: colors.text,
         }}
       >
-        {tab === "paths" ? <ManagedPaths theme="dark" /> : <BackupLogs theme="dark" />}
+        {tab === "paths" ? <ManagedPaths /> : <BackupLogs />}
       </div>
     </div>
   );

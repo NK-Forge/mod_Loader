@@ -1,18 +1,19 @@
 /**
  * @file electron/main.ts
  * @project Space Marine 2 Mod Loader
- * @phase 3B — Safety & Security + Move/Trash operations
+ * Phase 3B additions: Launch (Mod Play / Vanilla) + save mirroring
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
-import os from "os";
+import fsp from "fs/promises";
+
 import { ensureDir, backupDir } from "../src/main/security/backup";
 import { listMods, reconcileMods, deleteMod } from "../src/main/mods/fsMods";
 
-let mainWindow: BrowserWindow | null = null;
-
+// ----------------------- App Config -----------------------
 type InstallStrategy = "hardlink" | "symlink" | "copy";
 export interface AppConfig {
   setupComplete: boolean;
@@ -26,8 +27,9 @@ export interface AppConfig {
   installStrategy: InstallStrategy;
 }
 
-const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
+let mainWindow: BrowserWindow | null = null;
 
+const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 let config: AppConfig = {
   setupComplete: false,
   autoDetected: false,
@@ -45,10 +47,8 @@ function loadConfigFromDisk(): void {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
       config = { ...config, ...data };
-      console.log("[Config] Loaded.");
     } else {
       saveConfigToDisk();
-      console.log("[Config] Created default.");
     }
   } catch (err) {
     console.error("[Config] load error:", err);
@@ -69,8 +69,74 @@ function replaceConfig(next: Partial<AppConfig>): void {
   mainWindow?.webContents.send("config:changed", config);
 }
 
-/* ---------------- IPC: Config ---------------- */
+// ----------------------- Utility (copy/mirror) -----------------------
+async function dirIsEmpty(p: string): Promise<boolean> {
+  try {
+    const entries = await fsp.readdir(p);
+    return entries.length === 0;
+  } catch {
+    return true;
+  }
+}
 
+async function copyDirCount(src: string, dst: string): Promise<{ files: number; bytes: number }> {
+  let files = 0, bytes = 0;
+  await ensureDir(dst);
+  const entries = await fsp.readdir(src, { withFileTypes: true });
+  for (const e of entries) {
+    const sp = path.join(src, e.name);
+    const dp = path.join(dst, e.name);
+    if (e.isDirectory()) {
+      const sub = await copyDirCount(sp, dp);
+      files += sub.files; bytes += sub.bytes;
+    } else if (e.isFile()) {
+      await ensureDir(path.dirname(dp));
+      const st = await fsp.stat(sp);
+      await fsp.copyFile(sp, dp);
+      files += 1; bytes += st.size;
+    }
+  }
+  return { files, bytes };
+}
+
+/** Replace target directory contents with source contents (hard overwrite). */
+async function replaceDirContents(fromDir: string, toDir: string): Promise<{ files: number; bytes: number }> {
+  if (fs.existsSync(toDir)) {
+    await fsp.rm(toDir, { recursive: true, force: true });
+  }
+  await ensureDir(toDir);
+  if (!fs.existsSync(fromDir)) return { files: 0, bytes: 0 };
+  return copyDirCount(fromDir, toDir);
+}
+
+async function mirrorVaultIntoSavesIfNonEmpty(): Promise<void> {
+  const from = config.modPlayVaultPath;
+  const to   = config.saveDataPath;
+  if (!from || !to) return;
+  if (await dirIsEmpty(from)) return; // first-time safety: don't clobber user's saves
+  await replaceDirContents(from, to);
+}
+
+async function mirrorSavesIntoVault(): Promise<void> {
+  const from = config.saveDataPath;
+  const to   = config.modPlayVaultPath;
+  if (!from || !to) return;
+  await replaceDirContents(from, to);
+}
+
+function launchGameExe(): { ok: boolean; pid?: number; message?: string; child?: ReturnType<typeof spawn> } {
+  const exe = config.gameExe;
+  if (!exe || !fs.existsSync(exe)) return { ok: false, message: "Game executable not set or missing." };
+  try {
+    // we want to listen for exit, so don't ignore stdio
+    const child = spawn(exe, { cwd: path.dirname(exe), detached: false, stdio: "pipe" });
+    return { ok: true, pid: child.pid, child };
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+// ----------------------- IPC: Config -----------------------
 ipcMain.handle("config:get", () => config);
 
 ipcMain.handle("config:set", (_e, next: Partial<AppConfig>) => {
@@ -83,14 +149,12 @@ ipcMain.handle("config:completeSetup", (_e, next: AppConfig) => {
   return config;
 });
 
-/** Expose immutable vault paths to renderer settings. */
 ipcMain.handle("config:getImmutablePaths", () => ({
   modsVaultPath: config.modsVaultPath,
   modPlayVaultPath: config.modPlayVaultPath,
 }));
 
-/* ---------------- IPC: FS/Dialogs ---------------- */
-
+// ----------------------- IPC: FS Helpers -----------------------
 ipcMain.handle("browse:folder", async () => {
   if (!mainWindow) return null;
   const res = await dialog.showOpenDialog(mainWindow, {
@@ -116,8 +180,7 @@ ipcMain.handle("fs:testWrite", async (_e, dir: string) => {
   }
 });
 
-/* ---------------- IPC: Detect (best effort) ---------------- */
-
+// ----------------------- IPC: Detection (best-effort) -----------------------
 ipcMain.handle("detect:paths", async () => {
   const candidates: string[] = [];
   if (process.platform === "win32") {
@@ -158,13 +221,10 @@ ipcMain.handle("detect:paths", async () => {
   };
 });
 
-/* ---------------- IPC: Mods ---------------- */
-
+// ----------------------- IPC: Mods -----------------------
 ipcMain.handle("mods:listBoth", async () => {
   try {
-    console.log("[mods:listBoth] active=", config.activeModsPath, " vault=", config.modsVaultPath);
     const rows = await listMods(config.activeModsPath, config.modsVaultPath);
-    console.log("[mods:listBoth] rows=", rows);
     return rows;
   } catch (err) {
     console.error("[mods:listBoth] error:", err);
@@ -172,7 +232,6 @@ ipcMain.handle("mods:listBoth", async () => {
   }
 });
 
-/** Apply now MOVES enabled/disabled between Vault and Active (reconcile). */
 ipcMain.handle("mods:apply", async (_e, enabled: string[]) => {
   try {
     const backupRoot = path.join(config.modPlayVaultPath, "ops");
@@ -186,10 +245,8 @@ ipcMain.handle("mods:apply", async (_e, enabled: string[]) => {
   }
 });
 
-/** Delete a mod permanently (no backup). */
 ipcMain.handle("mods:delete", async (_e, name: string) => {
   try {
-    // Pass a dummy backupRoot to keep API signature; fsMods ignores it now
     const res = await deleteMod(name, config.activeModsPath, config.modsVaultPath, "");
     mainWindow?.webContents.send("mods:changed");
     return res; // { ok: true }
@@ -199,25 +256,47 @@ ipcMain.handle("mods:delete", async (_e, name: string) => {
   }
 });
 
-/** Manual snapshot of save/config data into mod_play_vault/manual/<timestamp>. */
+/** Overwrite mod_play_vault with current Steam save/config (manual button). */
 ipcMain.handle("mods:manualGameDataSave", async () => {
   try {
-    const manualRoot = path.join(config.modPlayVaultPath, "manual");
-    await ensureDir(manualRoot);
-    const { files, bytes } = await backupDir(config.saveDataPath, manualRoot);
-    return { files, bytes };
+    const from = config.saveDataPath;
+    const to   = config.modPlayVaultPath;
+    const res  = await replaceDirContents(from, to);
+    return { files: res.files, bytes: res.bytes };
   } catch (err: any) {
-    console.error("[mods:manualGameDataSave] error:", err);
+    console.error("[mods:manualGameDataSave] overwrite error:", err);
     return { files: 0, bytes: 0, error: String(err?.message || err) };
   }
 });
 
-/** Watchers (no-op in 3B; real chokidar comes in 3C). */
-ipcMain.handle("mods:startWatch", async () => true);
-ipcMain.handle("mods:stopWatch", async () => true);
+// ----------------------- IPC: Launch (Mod Play / Vanilla) -----------------------
+ipcMain.handle("game:launchModPlay", async () => {
+  try {
+    await mirrorVaultIntoSavesIfNonEmpty(); // only if vault has content
+    const launched = launchGameExe();
+    if (!launched.ok || !launched.child) return launched;
 
-/* ---------------- Window / Lifecycle ---------------- */
+    launched.child.on("exit", async () => {
+      try { await mirrorSavesIntoVault(); } catch (e) { console.error("[modPlay exit mirror] failed:", e); }
+      mainWindow?.webContents.send("mods:changed");
+    });
 
+    return { ok: true, pid: launched.pid };
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+});
+
+ipcMain.handle("game:launchVanilla", async () => {
+  try {
+    const launched = launchGameExe();
+    return { ok: launched.ok, pid: launched.pid, message: launched.message };
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+});
+
+// ----------------------- App lifecycle -----------------------
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1100,

@@ -15,7 +15,8 @@ type CopyEvent = {
 };
 
 export default function BackupLogs({ theme = "dark" }: { theme?: Theme }) {
-  const { modPlayVault } = useImmutablePaths();
+  const { modPlayVaultPath } = useImmutablePaths();
+  const vaultRoot = modPlayVaultPath;
   const api = (window as any).api;
 
   const dark = theme === "dark";
@@ -40,7 +41,7 @@ export default function BackupLogs({ theme = "dark" }: { theme?: Theme }) {
     let alive = true;
     (async () => {
       try {
-        const data = await api.listCopyEvents(modPlayVault, 14);
+        const data = await api.listCopyEvents(vaultRoot, 14);
         if (alive) setRows(data);
       } catch (e: any) {
         if (alive) setError(e?.message || "Failed to load log");
@@ -51,11 +52,11 @@ export default function BackupLogs({ theme = "dark" }: { theme?: Theme }) {
     return () => {
       alive = false;
     };
-  }, [modPlayVault]);
+  }, [vaultRoot]);
 
   const onRevealDest = async () => {
     try {
-      await api.revealPath(modPlayVault);
+      await api.revealPath(vaultRoot);
     } catch {}
   };
 

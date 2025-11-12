@@ -1,7 +1,7 @@
 /**
  * @file App.tsx
  * @project Space Marine 2 Mod Loader
- * @phase 3B — UI wiring for Apply(Reconcile) + Delete
+ * UI wiring: Apply, Delete (hard), Launch (Mod Play / Vanilla)
  */
 
 import React, { useEffect, useState } from "react";
@@ -69,23 +69,18 @@ export default function App() {
     (async () => {
       await refreshConfig();
       await refreshMods();
-      await api.startModsWatch?.();
-
+      // watchers arrive in 3C
       offConfig = api.onConfigChanged?.((nextCfg: AppConfig) => {
         setCfg(nextCfg);
         refreshMods();
       });
-
-      offMods = api.onModsChanged?.(() => {
-        refreshMods();
-      });
+      offMods = api.onModsChanged?.(() => refreshMods());
     })();
 
     return () => {
       try {
         offConfig && offConfig();
         offMods && offMods();
-        api.stopModsWatch?.();
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,6 +99,10 @@ export default function App() {
     !!cfg.modPlayVaultPath &&
     !!cfg.saveDataPath;
 
+  const hasActiveMods = (mods ?? []).some((m) => m.enabled);
+  const canLaunchMod = pathsOk && hasActiveMods;
+  const canLaunchVan = pathsOk && !hasActiveMods;
+
   const markAll = (on: boolean) =>
     setMods((m) => m.map((r) => ({ ...r, enabled: on })));
 
@@ -121,26 +120,42 @@ export default function App() {
 
   const deleteOne = async (name: string) => {
     const yes = confirm(
-      `Delete "${name}" from Active/Vault?\n(We will back it up under mod_play_vault/ops/trash)`
+      `Permanently delete "${name}" from your computer?\nThis cannot be undone.`
     );
     if (!yes) return;
     const res = await api.deleteMod(name);
-    if (!res?.ok) alert((res as any)?.message || "Delete failed");
-    await refreshMods();
+    if (!res?.ok) {
+      alert(res?.message || "Delete failed - make sure the game is closed.");
+    } else {
+      await refreshMods();
+    }
   };
 
-  const launchTracked = async () => {
-    const enabled = mods.filter((m) => m.enabled).map((m) => m.name);
-    await api.launchWithModsTracked?.(enabled);
-    await refreshMods();
+  const launchModPlay = async () => {
+    const res = await api.launchModPlay();
+    if (!res?.ok) alert(res?.message || "Launch (Mod Play) failed");
+  };
+
+  const launchVanillaPlay = async () => {
+    const res = await api.launchVanillaPlay();
+    if (!res?.ok) alert(res?.message || "Launch (Vanilla Play) failed");
   };
 
   const manualGameDataSave = async () => {
+    const ok = confirm(
+      "Overwrite Mod Play Vault with current Steam save/config files?\n" +
+        "This will REPLACE everything in your Mod Play Vault."
+    );
+    if (!ok) return;
     const ev = await api.manualGameDataSave();
+    if (ev?.error) {
+      alert(`Save failed: ${ev.error}`);
+      return;
+    }
     alert(
       `Saved ${ev.files} files (${(ev.bytes / 1024 / 1024).toFixed(
         1
-      )} MB) to mod_play_vault.`
+      )} MB) into Mod Play Vault.`
     );
   };
 
@@ -191,7 +206,12 @@ export default function App() {
             </div>
           </div>
           <div
-            style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.4, marginBottom: 8 }}
+            style={{
+              fontSize: 12,
+              opacity: 0.8,
+              lineHeight: 1.4,
+              marginBottom: 8,
+            }}
           >
             <div>
               <strong>Active Mods:</strong> {cfg.activeModsPath || "(not set)"}
@@ -209,11 +229,7 @@ export default function App() {
             >
               Manual game data save
             </button>
-            <button
-              style={btn}
-              onClick={refreshMods}
-              title="Re-scan Active Mods + Mods Vault"
-            >
+            <button style={btn} onClick={refreshMods} title="Re-scan">
               Refresh
             </button>
             <button style={btn} onClick={() => setShowAdvanced(true)}>
@@ -279,23 +295,25 @@ export default function App() {
                   onChange={() => toggle(m.name)}
                 />
                 <div>{m.name}</div>
-                <div style={{ textAlign: "right", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <div
+                  style={{
+                    textAlign: "right",
+                    display: "flex",
+                    gap: 8,
+                    justifyContent: "flex-end",
+                  }}
+                >
                   {!m.enabled && m.inVault && (
                     <span title="Installed in vault">🗃️ in vault</span>
                   )}
                   <button
-                    style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                    title="Delete mod"
-                    onClick={async () => {
-                      const yes = confirm(`Permanently delete "${m.name}" from your computer?\nThis cannot be undone.`);
-                      if (!yes) return;
-                      const res = await (window as any).api.deleteMod(m.name);
-                      if (!res?.ok) {
-                        alert(res?.message || "Delete failed - make sure the game is closed.");
-                      } else {
-                        await refreshMods();
-                      }
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
                     }}
+                    title="Delete mod"
+                    onClick={() => deleteOne(m.name)}
                   >
                     🗑️
                   </button>
@@ -309,8 +327,11 @@ export default function App() {
           <button style={btn} onClick={applyMods} disabled={!pathsOk}>
             Apply (no launch)
           </button>
-          <button style={btn} onClick={launchTracked} disabled={!pathsOk}>
-            Launch (Tracked)
+          <button style={btn} onClick={launchModPlay} disabled={!canLaunchMod}>
+            Launch (Mod Play)
+          </button>
+          <button style={btn} onClick={launchVanillaPlay} disabled={!canLaunchVan}>
+            Launch (Vanilla Play)
           </button>
         </div>
       </div>
