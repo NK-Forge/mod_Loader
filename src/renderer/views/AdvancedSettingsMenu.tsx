@@ -1,11 +1,13 @@
 import React from "react";
 import ManagedPaths from "./ManagedPaths";
 import BackupLogs from "./BackupLogs";
+import { useVaultWatcher } from "../hooks/useVaultWatcher";
 
 type Tab = "paths" | "logs";
 
 export default function AdvancedSettingsMenu() {
   const [tab, setTab] = React.useState<Tab>("paths");
+  const { lastEvent } = useVaultWatcher();
 
   const isDark = true; // Force dark mode style
   const colors = {
@@ -15,7 +17,7 @@ export default function AdvancedSettingsMenu() {
     subtext: isDark ? "#999" : "#555",
     border: isDark ? "#333" : "#ddd",
     active: isDark ? "#2a2a2a" : "#eee",
-    accent: "#00c4b3", // NK Forge teal/cyan tone
+    accent: "#00c4b3",
   };
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -30,15 +32,41 @@ export default function AdvancedSettingsMenu() {
 
   return (
     <div style={{ color: colors.text, background: colors.bg, padding: 8 }}>
+      {/* Header with watcher pulse */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>Advanced Settings</div>
+
+        <div style={{ marginLeft: "auto", fontSize: 12, color: colors.subtext }}>
+          <span
+            title="Watcher heartbeat"
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: lastEvent ? colors.accent : colors.border,
+              marginRight: 8,
+            }}
+          />
+          {lastEvent
+            ? `[${lastEvent.domain}] ${lastEvent.type}${
+                lastEvent.file ? ` – ${lastEvent.file.split("/").pop()}` : ""
+              }`
+            : "watching mods/ & mod_play_vault/…"}
+        </div>
+      </div>
+
+      {/* Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button style={tabStyle(tab === "paths")} onClick={() => setTab("paths")}>
           Managed Paths
         </button>
         <button style={tabStyle(tab === "logs")} onClick={() => setTab("logs")}>
-          Backup Logs
+          Logs
         </button>
       </div>
 
+      {/* Panel */}
       <div
         style={{
           border: `1px solid ${colors.border}`,
@@ -49,6 +77,13 @@ export default function AdvancedSettingsMenu() {
         }}
       >
         {tab === "paths" ? <ManagedPaths /> : <BackupLogs />}
+      </div>
+
+      {/* Footnote (Phase 3C mirror-only contract) */}
+      <div style={{ marginTop: 10, fontSize: 12, color: colors.subtext, lineHeight: 1.4 }}>
+        <strong>Mirror-only behavior:</strong> If <code>Mods/</code> is empty → Vanilla Play (we don’t touch saves).
+        If populated → Mod Play: pre-launch mirrors <code>mod_play_vault → config</code> (when vault has data), and on
+        exit mirrors <code>config → mod_play_vault</code>.
       </div>
     </div>
   );

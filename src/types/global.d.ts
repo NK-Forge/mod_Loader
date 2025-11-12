@@ -1,3 +1,4 @@
+// src/types/global.d.ts
 // Type declarations for `window.api` additions used by Advanced Settings.
 export {};
 

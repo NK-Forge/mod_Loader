@@ -95,4 +95,11 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on(CH.EVT_MODS_CHANGED, fn);
     return () => ipcRenderer.off(CH.EVT_MODS_CHANGED, fn);
   },
+
+  // Generic IPC bridge needed by hooks like useVaultWatcher
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  on: (channel: string, listener: (e: any, payload: any) => void) =>
+    ipcRenderer.on(channel, listener),
+  removeListener: (channel: string, listener: any) =>
+    ipcRenderer.removeListener(channel, listener),
 });

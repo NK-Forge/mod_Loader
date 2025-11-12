@@ -39,6 +39,7 @@ export default function App() {
 
   const [mods, setMods] = useState<ModRow[]>([]);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [launching, setLaunching] = useState(false);
 
   const refreshConfig = async () => {
     const next = await api.getConfig();
@@ -132,13 +133,25 @@ export default function App() {
   };
 
   const launchModPlay = async () => {
-    const res = await api.launchModPlay();
-    if (!res?.ok) alert(res?.message || "Launch (Mod Play) failed");
+    if (launching) return;
+    setLaunching(true);
+    try {
+      const res = await api.launchModPlay();
+      if (!res?.ok) alert(res?.message || "Launch (Mod Play) failed");
+    } finally {
+      setLaunching(false);
+    }
   };
 
   const launchVanillaPlay = async () => {
-    const res = await api.launchVanillaPlay();
-    if (!res?.ok) alert(res?.message || "Launch (Vanilla Play) failed");
+    if (launching) return;
+    setLaunching(true);
+    try {
+      const res = await api.launchVanillaPlay();
+      if (!res?.ok) alert(res?.message || "Launch (Vanilla Play) failed");
+    } finally {
+      setLaunching(false);
+    }
   };
 
   const manualGameDataSave = async () => {

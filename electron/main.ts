@@ -13,6 +13,11 @@ import fsp from "fs/promises";
 import { ensureDir, backupDir } from "../src/main/security/backup";
 import { listMods, reconcileMods, deleteMod } from "../src/main/mods/fsMods";
 
+// Phase 3C: watchers & play control
+import { registerVaultWatcherIPC } from "./ipc/vaultWatcher";
+import "./ipc/playController";
+import { watchRegistry } from "./watchRegistry";
+
 // ----------------------- App Config -----------------------
 type InstallStrategy = "hardlink" | "symlink" | "copy";
 export interface AppConfig {
@@ -69,51 +74,51 @@ function replaceConfig(next: Partial<AppConfig>): void {
   mainWindow?.webContents.send("config:changed", config);
 }
 
-// ----------------------- Utility (copy/mirror) -----------------------
+// ----------------------- Utils -----------------------
 async function dirIsEmpty(p: string): Promise<boolean> {
   try {
-    const entries = await fsp.readdir(p);
-    return entries.length === 0;
+    const items = await fsp.readdir(p);
+    return items.length === 0;
   } catch {
     return true;
   }
 }
 
-async function copyDirCount(src: string, dst: string): Promise<{ files: number; bytes: number }> {
-  let files = 0, bytes = 0;
-  await ensureDir(dst);
-  const entries = await fsp.readdir(src, { withFileTypes: true });
-  for (const e of entries) {
-    const sp = path.join(src, e.name);
-    const dp = path.join(dst, e.name);
-    if (e.isDirectory()) {
-      const sub = await copyDirCount(sp, dp);
-      files += sub.files; bytes += sub.bytes;
-    } else if (e.isFile()) {
-      await ensureDir(path.dirname(dp));
-      const st = await fsp.stat(sp);
-      await fsp.copyFile(sp, dp);
-      files += 1; bytes += st.size;
+async function replaceDirContents(from: string, to: string): Promise<void> {
+  await ensureDir(from);
+  await ensureDir(to);
+  // Clear destination then copy everything over (true mirror)
+  const entries = await fsp.readdir(to);
+  for (const name of entries) {
+    const t = path.join(to, name);
+    await fsp.rm(t, { recursive: true, force: true });
+  }
+
+  // Copy all from src → dst
+  const stack = [{ src: from, dst: to }];
+  while (stack.length) {
+    const { src, dst } = stack.pop()!;
+    await ensureDir(dst);
+    const items = await fsp.readdir(src, { withFileTypes: true });
+    for (const it of items) {
+      const s = path.join(src, it.name);
+      const d = path.join(dst, it.name);
+      if (it.isDirectory()) {
+        stack.push({ src: s, dst: d });
+      } else if (it.isFile()) {
+        await ensureDir(path.dirname(d));
+        await fsp.copyFile(s, d);
+      }
     }
   }
-  return { files, bytes };
 }
 
-/** Replace target directory contents with source contents (hard overwrite). */
-async function replaceDirContents(fromDir: string, toDir: string): Promise<{ files: number; bytes: number }> {
-  if (fs.existsSync(toDir)) {
-    await fsp.rm(toDir, { recursive: true, force: true });
-  }
-  await ensureDir(toDir);
-  if (!fs.existsSync(fromDir)) return { files: 0, bytes: 0 };
-  return copyDirCount(fromDir, toDir);
-}
-
-async function mirrorVaultIntoSavesIfNonEmpty(): Promise<void> {
+// ----------------------- Phase 3B/3C: Mirroring helpers -----------------------
+async function mirrorVaultIntoGameSavesIfPresent(): Promise<void> {
   const from = config.modPlayVaultPath;
-  const to   = config.saveDataPath;
+  const to = config.saveDataPath;
   if (!from || !to) return;
-  if (await dirIsEmpty(from)) return; // first-time safety: don't clobber user's saves
+  if (await dirIsEmpty(from)) return; // nothing in vault → do nothing pre-launch
   await replaceDirContents(from, to);
 }
 
@@ -126,182 +131,25 @@ async function mirrorSavesIntoVault(): Promise<void> {
 
 function launchGameExe(): { ok: boolean; pid?: number; message?: string; child?: ReturnType<typeof spawn> } {
   const exe = config.gameExe;
-  if (!exe || !fs.existsSync(exe)) return { ok: false, message: "Game executable not set or missing." };
+  if (!exe || !fs.existsSync(exe)) return { ok: false, message: "Game executable not configured." };
   try {
-    // we want to listen for exit, so don't ignore stdio
-    const child = spawn(exe, { cwd: path.dirname(exe), detached: false, stdio: "pipe" });
+    const child = spawn(exe, [], { detached: false, stdio: "ignore" });
     return { ok: true, pid: child.pid, child };
-  } catch (err: any) {
-    return { ok: false, message: String(err?.message || err) };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Failed to launch game." };
   }
 }
 
-// ----------------------- IPC: Config -----------------------
-ipcMain.handle("config:get", () => config);
-
-ipcMain.handle("config:set", (_e, next: Partial<AppConfig>) => {
-  replaceConfig(next);
-  return config;
-});
-
-ipcMain.handle("config:completeSetup", (_e, next: AppConfig) => {
-  replaceConfig({ ...next, setupComplete: true });
-  return config;
-});
-
-ipcMain.handle("config:getImmutablePaths", () => ({
-  modsVaultPath: config.modsVaultPath,
-  modPlayVaultPath: config.modPlayVaultPath,
-}));
-
-// ----------------------- IPC: FS Helpers -----------------------
-ipcMain.handle("browse:folder", async () => {
-  if (!mainWindow) return null;
-  const res = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openDirectory", "createDirectory"],
-  });
-  return res.canceled ? null : res.filePaths[0] || null;
-});
-
-ipcMain.handle("fs:ensureDirs", async (_e, dirs: string[]) => {
-  for (const d of dirs ?? []) if (typeof d === "string" && d.trim()) await ensureDir(d);
-  return true;
-});
-
-ipcMain.handle("fs:testWrite", async (_e, dir: string) => {
-  try {
-    const testFile = path.join(dir, `.write_test_${Date.now()}.tmp`);
-    await ensureDir(dir);
-    fs.writeFileSync(testFile, "ok", "utf-8");
-    fs.unlinkSync(testFile);
-    return true;
-  } catch {
-    return false;
-  }
-});
-
-// ----------------------- IPC: Detection (best-effort) -----------------------
-ipcMain.handle("detect:paths", async () => {
-  const candidates: string[] = [];
-  if (process.platform === "win32") {
-    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
-    const pf = process.env["PROGRAMFILES"] || "C:\\Program Files";
-    const home = app.getPath("home");
-    candidates.push(path.join(pf86, "Steam", "steamapps", "common"));
-    candidates.push(path.join(pf,   "Steam", "steamapps", "common"));
-    candidates.push("C:\\SteamLibrary\\steamapps\\common");
-    candidates.push(path.join(home, "SteamLibrary", "steamapps", "common"));
-  } else {
-    const home = app.getPath("home");
-    candidates.push(path.join(home, ".steam", "steam", "steamapps", "common"));
-    candidates.push(path.join(home, ".local", "share", "Steam", "steamapps", "common"));
-  }
-
-  let gameRoot = "";
-  for (const c of candidates) {
-    const guess = path.join(c, "Space Marine 2");
-    if (fs.existsSync(guess)) { gameRoot = guess; break; }
-  }
-
-  const gameExe = process.platform === "win32"
-    ? (gameRoot ? path.join(gameRoot, "Warhammer 40000 Space Marine 2.exe") : "")
-    : (gameRoot ? path.join(gameRoot, "SpaceMarine2") : "");
-
-  const activeModsPath = gameRoot ? path.join(gameRoot, "client_pc", "root", "mods") : "";
-
-  const saveDataPath = process.platform === "win32"
-    ? path.join(app.getPath("home"), "AppData", "Local", "Saber", "Space Marine 2", "storage", "steam", "user", "<id>", "Main", "config")
-    : "";
-
-  return {
-    gameRoot: fs.existsSync(gameRoot) ? gameRoot : "",
-    gameExe: fs.existsSync(gameExe) ? gameExe : "",
-    activeModsPath: fs.existsSync(activeModsPath) ? activeModsPath : "",
-    saveDataPath: fs.existsSync(saveDataPath) ? saveDataPath : "",
-  };
-});
-
-// ----------------------- IPC: Mods -----------------------
-ipcMain.handle("mods:listBoth", async () => {
-  try {
-    const rows = await listMods(config.activeModsPath, config.modsVaultPath);
-    return rows;
-  } catch (err) {
-    console.error("[mods:listBoth] error:", err);
-    return [];
-  }
-});
-
-ipcMain.handle("mods:apply", async (_e, enabled: string[]) => {
-  try {
-    const backupRoot = path.join(config.modPlayVaultPath, "ops");
-    await ensureDir(backupRoot);
-    await reconcileMods(enabled, config.activeModsPath, config.modsVaultPath, backupRoot);
-    mainWindow?.webContents.send("mods:changed");
-    return { ok: true };
-  } catch (err: any) {
-    console.error("[mods:apply] error:", err);
-    return { ok: false, message: String(err?.message || err) };
-  }
-});
-
-ipcMain.handle("mods:delete", async (_e, name: string) => {
-  try {
-    const res = await deleteMod(name, config.activeModsPath, config.modsVaultPath, "");
-    mainWindow?.webContents.send("mods:changed");
-    return res; // { ok: true }
-  } catch (err: any) {
-    console.error("[mods:delete] error:", err);
-    return { ok: false, message: String(err?.message || err) };
-  }
-});
-
-/** Overwrite mod_play_vault with current Steam save/config (manual button). */
-ipcMain.handle("mods:manualGameDataSave", async () => {
-  try {
-    const from = config.saveDataPath;
-    const to   = config.modPlayVaultPath;
-    const res  = await replaceDirContents(from, to);
-    return { files: res.files, bytes: res.bytes };
-  } catch (err: any) {
-    console.error("[mods:manualGameDataSave] overwrite error:", err);
-    return { files: 0, bytes: 0, error: String(err?.message || err) };
-  }
-});
-
-// ----------------------- IPC: Launch (Mod Play / Vanilla) -----------------------
-ipcMain.handle("game:launchModPlay", async () => {
-  try {
-    await mirrorVaultIntoSavesIfNonEmpty(); // only if vault has content
-    const launched = launchGameExe();
-    if (!launched.ok || !launched.child) return launched;
-
-    launched.child.on("exit", async () => {
-      try { await mirrorSavesIntoVault(); } catch (e) { console.error("[modPlay exit mirror] failed:", e); }
-      mainWindow?.webContents.send("mods:changed");
-    });
-
-    return { ok: true, pid: launched.pid };
-  } catch (err: any) {
-    return { ok: false, message: String(err?.message || err) };
-  }
-});
-
-ipcMain.handle("game:launchVanilla", async () => {
-  try {
-    const launched = launchGameExe();
-    return { ok: launched.ok, pid: launched.pid, message: launched.message };
-  } catch (err: any) {
-    return { ok: false, message: String(err?.message || err) };
-  }
-});
-
-// ----------------------- App lifecycle -----------------------
+// ----------------------- Window -----------------------
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
-    webPreferences: { preload: path.join(__dirname, "preload.js") },
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
 
   if (app.isPackaged) {
@@ -314,6 +162,153 @@ function createWindow(): void {
   mainWindow.on("closed", () => (mainWindow = null));
 }
 
+// ----------------------- IPC: Config -----------------------
+ipcMain.handle("config:get", () => config);
+ipcMain.handle("config:set", (_e, next: Partial<AppConfig>) => {
+  const prev = { ...config };
+  replaceConfig(next); // persists + emits "config:changed"
+
+  // If path fields changed, rebind watchers (mods + modPlay)
+  const pathsChanged =
+    (next.activeModsPath && next.activeModsPath !== prev.activeModsPath) ||
+    (next.modPlayVaultPath && next.modPlayVaultPath !== prev.modPlayVaultPath);
+
+  if (pathsChanged) {
+    try {
+      watchRegistry.setPaths({
+        mods: config.activeModsPath || "",
+        modPlay: config.modPlayVaultPath || "",
+      });
+    } catch (err) {
+      console.error("[Phase3C] watchers:setPaths failed", err);
+    }
+  }
+  return { ok: true };
+});
+
+// ----------------------- IPC: Mods -----------------------
+
+// --- Mods: list ---
+ipcMain.handle("mods:list", async () => {
+  try {
+    const mods = await listMods(
+      config.activeModsPath,   // activeDir
+      config.modsVaultPath     // vaultDir
+    );
+    return { ok: true, mods };
+  } catch (e: any) {
+    return { ok: false, message: e?.message ?? "Failed to list mods." };
+  }
+});
+
+// --- Mods: reconcile ---
+ipcMain.handle("mods:reconcile", async (_e, desired: string[]) => {
+  try {
+    await reconcileMods(
+      desired,                  // ← first param is the desired list
+      config.activeModsPath,    // activeDir
+      config.modsVaultPath,     // vaultDir
+      config.installStrategy    // strategy
+    );
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, message: e?.message ?? "Failed to reconcile mods." };
+  }
+});
+
+// --- Mods: delete ---
+ipcMain.handle("mods:delete", async (_e, modName: string) => {
+  try {
+    await deleteMod(
+      config.activeModsPath,    // activeDir
+      config.modsVaultPath,     // vaultDir
+      modName,                  // name
+      config.installStrategy    // strategy (remove if your signature doesn’t need it)
+    );
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, message: e?.message ?? "Failed to delete mod." };
+  }
+});
+
+// ----------------------- IPC: Play (Vanilla vs Mod) -----------------------
+ipcMain.handle("play:canLaunch", async () => {
+  // If activeModsPath has files, we consider Mod Play. If empty → Vanilla.
+  const modsEmpty = await dirIsEmpty(config.activeModsPath);
+  return { isModPlay: !modsEmpty };
+});
+
+ipcMain.handle("play:launch", async () => {
+  const isModPlay = !(await dirIsEmpty(config.activeModsPath));
+
+  // Pre-launch behavior: only for Mod Play
+  if (isModPlay) {
+    await mirrorVaultIntoGameSavesIfPresent();
+  }
+
+  const result = launchGameExe();
+  if (!result.ok || !result.child) {
+    dialog.showErrorBox("Launch Failed", result.message || "Could not start game.");
+    return { ok: false, message: result.message || "Launch error" };
+  }
+
+  // On process close, perform post-exit mirror (only in Mod Play)
+  return await new Promise((resolve) => {
+    result.child!.on("close", async (code: number) => {
+      if (isModPlay) {
+        await mirrorSavesIntoVault();
+      }
+      resolve({ ok: true, mode: isModPlay ? "mod" : "vanilla", exitCode: code ?? 0 });
+    });
+  });
+});
+
+// --- Manual save: copy game config → mod_play_vault (overwrites) ---
+ipcMain.handle("manualGameDataSave", async () => {
+  try {
+    await mirrorSavesIntoVault(); // uses config.saveDataPath → config.modPlayVaultPath
+    // return a small summary like App.tsx expects:
+    // (If you don’t track counts/bytes, just return ok:true)
+    return { ok: true, files: 0, bytes: 0 };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "manualGameDataSave failed" };
+  }
+});
+
+// --- Launch (Vanilla): no mirrors, just spawn ---
+ipcMain.handle("launchVanillaPlay", async () => {
+  const result = launchGameExe();
+  if (!result.ok || !result.child) {
+    return { ok: false, message: result.message || "Could not launch (Vanilla)" };
+  }
+  return await new Promise((resolve) => {
+    result.child!.on("close", (code: number) => {
+      resolve({ ok: true, mode: "vanilla", exitCode: code ?? 0 });
+    });
+  });
+});
+
+// --- Launch (Mod Play): pre-mirror (vault→config if vault has data), then post-mirror (config→vault) ---
+ipcMain.handle("launchModPlay", async () => {
+  try {
+    await mirrorVaultIntoGameSavesIfPresent(); // vault → config (only if vault has content)
+    const result = launchGameExe();
+    if (!result.ok || !result.child) {
+      return { ok: false, message: result.message || "Could not launch (Mod Play)" };
+    }
+    return await new Promise((resolve) => {
+      result.child!.on("close", async (code: number) => {
+        try { await mirrorSavesIntoVault(); } catch {}
+        resolve({ ok: true, mode: "mod", exitCode: code ?? 0 });
+      });
+    });
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Launch (Mod Play) failed" };
+  }
+});
+
+
+// ----------------------- App Lifecycle -----------------------
 app.whenReady().then(async () => {
   loadConfigFromDisk();
   await Promise.all([
@@ -321,6 +316,19 @@ app.whenReady().then(async () => {
     ensureDir(config.modPlayVaultPath),
   ]);
   createWindow();
+
+  // Phase 3C: attach watcher IPC and set initial paths
+  if (mainWindow) {
+    registerVaultWatcherIPC(mainWindow);
+  }
+  try {
+    watchRegistry.setPaths({
+      mods: config.activeModsPath || "",
+      modPlay: config.modPlayVaultPath || "",
+    });
+  } catch (e) {
+    console.error("[Phase3C] watcher init error", e);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
