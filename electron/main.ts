@@ -4,18 +4,22 @@
  * Phase 3B additions: Launch (Mod Play / Vanilla) + save mirroring
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 import fsp from "fs/promises";
+import fse from "fs-extra";
+import { pathToFileURL } from "node:url";
 
-import { ensureDir, backupDir } from "../src/main/security/backup";
+import { ensureDir } from "../src/main/security/backup";
 import { listMods, reconcileMods, deleteMod } from "../src/main/mods/fsMods";
+import "../src/main/ipc/paths";
+import { patchConfig as syncConfigStore } from "../src/main/state/configStore";
+
 
 // Phase 3C: watchers & play control
 import { registerVaultWatcherIPC } from "./ipc/vaultWatcher";
-import "./ipc/playController";
 import { watchRegistry } from "./watchRegistry";
 
 // ----------------------- App Config -----------------------
@@ -30,9 +34,12 @@ export interface AppConfig {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
+  backgroundImagePath?: string;
 }
 
 let mainWindow: BrowserWindow | null = null;
+
+Menu.setApplicationMenu(null); // disable default menu
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 let config: AppConfig = {
@@ -45,15 +52,31 @@ let config: AppConfig = {
   modPlayVaultPath: path.join(app.getPath("userData"), "mod_play_vault"),
   saveDataPath: "",
   installStrategy: "hardlink",
+  backgroundImagePath: "",
 };
+
+function bgStorageDir() {
+  return path.join(app.getPath("userData"), "backgrounds");
+}
+function bgDestFor(srcAbs: string) {
+  const ext = (path.extname(srcAbs) || ".jpg").toLowerCase();
+  return path.join(bgStorageDir(), "user_bg" + ext);
+}
+function toFileUrl(abs: string) {
+  try { return pathToFileURL(abs).toString(); } catch { return ""; }
+}
 
 function loadConfigFromDisk(): void {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
       config = { ...config, ...data };
+      // keep configStore in sync for src/main/ipc/*
+      syncConfigStore(config);
     } else {
+      // first run: persist defaults and sync
       saveConfigToDisk();
+      syncConfigStore(config);
     }
   } catch (err) {
     console.error("[Config] load error:", err);
@@ -71,6 +94,11 @@ function saveConfigToDisk(): void {
 function replaceConfig(next: Partial<AppConfig>): void {
   config = { ...config, ...next };
   saveConfigToDisk();
+
+  // mirror into configStore so paths.ts (and any other src/main services)
+  // see the real values
+  syncConfigStore(config);
+
   mainWindow?.webContents.send("config:changed", config);
 }
 
@@ -145,10 +173,15 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
+    autoHideMenuBar: true,
+    frame: false,
+    titleBarStyle: "hiddenInset",
+
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: app.isPackaged,
     },
   });
 
@@ -161,6 +194,27 @@ function createWindow(): void {
 
   mainWindow.on("closed", () => (mainWindow = null));
 }
+
+ipcMain.handle("window:minimize", () => {
+  if (mainWindow && !mainWindow.isMinimized()) {
+    mainWindow.minimize();
+  }
+});
+
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+ipcMain.handle("window:close", () => {
+  if (mainWindow) {
+    mainWindow.close();
+  }
+});
 
 // ----------------------- IPC: Config -----------------------
 ipcMain.handle("config:get", () => config);
@@ -307,6 +361,42 @@ ipcMain.handle("launchModPlay", async () => {
   }
 });
 
+// ----------------------- IPC: Background -----------------------
+ipcMain.handle("bg:get", async () => {
+  const p = config.backgroundImagePath || "";
+  return { ok: true, path: p, fileUrl: p ? toFileUrl(p) : "" };
+});
+
+ipcMain.handle("bg:choose", async () => {
+  const res = await dialog.showOpenDialog({
+    title: "Choose background image",
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: ["jpg","jpeg","png","webp"] }],
+  });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+  return { ok: true, path: res.filePaths[0] };
+});
+
+ipcMain.handle("bg:set", async (_e, srcAbs: string) => {
+  try {
+    if (!srcAbs) return { ok: false, message: "No file selected." };
+    const allowed = [".jpg",".jpeg",".png",".webp"];
+    const ext = path.extname(srcAbs).toLowerCase();
+    if (!allowed.includes(ext)) return { ok: false, message: "Unsupported format." };
+    await fse.ensureDir(bgStorageDir());
+    const dst = bgDestFor(srcAbs);
+    await fse.copy(srcAbs, dst, { overwrite: true });
+    replaceConfig({ backgroundImagePath: dst }); // your existing config persist
+    return { ok: true, path: dst, fileUrl: toFileUrl(dst) };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Failed to set background." };
+  }
+});
+
+ipcMain.handle("bg:reset", async () => {
+  replaceConfig({ backgroundImagePath: "" });
+  return { ok: true };
+});
 
 // ----------------------- App Lifecycle -----------------------
 app.whenReady().then(async () => {
@@ -333,6 +423,10 @@ app.whenReady().then(async () => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("before-quit", async () => {
+  try { await (watchRegistry as any).disposeAll?.(); } catch {}
 });
 
 app.on("window-all-closed", () => {

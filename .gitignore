@@ -6,6 +6,7 @@ out/
 build/
 .DS_Store
 Thumbs.db
+hardlink/
 
 # Logs
 npm-debug.log*
@@ -62,6 +63,7 @@ logs/
 cache/
 tmp/
 scripts/
+*.txt
 
 # Electron builder outputs
 /dist_electron/

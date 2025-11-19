@@ -1,21 +1,29 @@
 /**
  * @file electron/preload.ts
- * Exposes a typed window.api bridge.
+ * Safe window.api bridge for renderer (Phase 4)
  */
 
 import { contextBridge, ipcRenderer } from "electron";
 
+// These are just for typing on the renderer side
 type InstallStrategy = "hardlink" | "symlink" | "copy";
+
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
+
   gameRoot: string;
   gameExe: string;
+
   activeModsPath: string;
   modsVaultPath: string;
   modPlayVaultPath: string;
   saveDataPath: string;
+
   installStrategy: InstallStrategy;
+
+  // Phase 4A.2 background support
+  backgroundImagePath?: string;
 };
 
 type ModRow = { name: string; enabled: boolean; inVault: boolean };
@@ -25,81 +33,135 @@ type ImmutablePaths = {
   modPlayVaultPath: string;
 };
 
+// IPC channels actually implemented in main/ipc & main.ts
 const CH = {
+  // config
   CONFIG_GET: "config:get",
   CONFIG_SET: "config:set",
-  CONFIG_COMPLETE: "config:completeSetup",
-  CONFIG_IMMUTABLE: "config:getImmutablePaths",
-
-  BROWSE_FOLDER: "browse:folder",
-  FS_ENSURE_DIRS: "fs:ensureDirs",
-  FS_TEST_WRITE: "fs:testWrite",
-
-  DETECT_PATHS: "detect:paths",
-
-  MODS_LIST_BOTH: "mods:listBoth",
-  MODS_APPLY: "mods:apply",
-  MODS_DELETE: "mods:delete",
-  MODS_MANUAL_SAVE: "mods:manualGameDataSave",
-
-  GAME_LAUNCH_MOD: "game:launchModPlay",
-  GAME_LAUNCH_VAN: "game:launchVanilla",
-
   EVT_CONFIG_CHANGED: "config:changed",
-  EVT_MODS_CHANGED: "mods:changed",
+
+  // mods
+  MODS_LIST: "mods:list",
+  MODS_RECONCILE: "mods:reconcile",
+  MODS_DELETE: "mods:delete",
+
+  // play
+  PLAY_CAN: "play:canLaunch",
+  PLAY_LAUNCH: "play:launch",
+  LAUNCH_MOD: "launchModPlay",
+  LAUNCH_VAN: "launchVanillaPlay",
+  MANUAL_SAVE: "manualGameDataSave",
+
+  // background
+  BG_GET: "bg:get",
+  BG_CHOOSE: "bg:choose",
+  BG_SET: "bg:set",
+  BG_RESET: "bg:reset",
+
+  // paths (immutable vault paths for Advanced Settings)
+  PATHS_IMMUTABLE_GET: "paths:immutable:get",
 } as const;
 
+// Small helper so all invoke calls log consistently if something blows up
+async function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
+  try {
+    return await ipcRenderer.invoke(channel, ...args);
+  } catch (err) {
+    console.error(`[PRELOAD] invoke failed: ${channel}`, err);
+    throw err;
+  }
+}
+
 contextBridge.exposeInMainWorld("api", {
-  // Config
-  getConfig(): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_GET); },
-  setConfig(next: Partial<AppConfig>): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_SET, next); },
-  completeSetup(next: AppConfig): Promise<AppConfig> { return ipcRenderer.invoke(CH.CONFIG_COMPLETE, next); },
-  getImmutablePaths(): Promise<ImmutablePaths> { return ipcRenderer.invoke(CH.CONFIG_IMMUTABLE); },
-
-  // FS
-  browseFolder(): Promise<string | null> { return ipcRenderer.invoke(CH.BROWSE_FOLDER); },
-  ensureDirs(dirs: string[]): Promise<boolean> { return ipcRenderer.invoke(CH.FS_ENSURE_DIRS, dirs); },
-  testWrite(dir: string): Promise<boolean> { return ipcRenderer.invoke(CH.FS_TEST_WRITE, dir); },
-
-  // Detect
-  detectPaths(): Promise<Partial<AppConfig>> { return ipcRenderer.invoke(CH.DETECT_PATHS); },
-
-  // Mods
-  listModsBoth(): Promise<ModRow[]> { return ipcRenderer.invoke(CH.MODS_LIST_BOTH); },
-  applyMods(enabledNames: string[]): Promise<{ ok: boolean; message?: string }> {
-    return ipcRenderer.invoke(CH.MODS_APPLY, enabledNames);
-  },
-  deleteMod(name: string): Promise<{ ok: boolean; message?: string }> {
-    return ipcRenderer.invoke(CH.MODS_DELETE, name);
-  },
-  manualGameDataSave(): Promise<{ files: number; bytes: number; error?: string }> {
-    return ipcRenderer.invoke(CH.MODS_MANUAL_SAVE);
+  // ----- Config -----
+  getConfig(): Promise<AppConfig> {
+    return invoke<AppConfig>(CH.CONFIG_GET);
   },
 
-  // Launch
-  launchModPlay(): Promise<{ ok: boolean; pid?: number; message?: string }> {
-    return ipcRenderer.invoke(CH.GAME_LAUNCH_MOD);
-  },
-  launchVanillaPlay(): Promise<{ ok: boolean; pid?: number; message?: string }> {
-    return ipcRenderer.invoke(CH.GAME_LAUNCH_VAN);
+  setConfig(next: Partial<AppConfig>): Promise<{ ok: boolean }> {
+    return invoke(CH.CONFIG_SET, next);
   },
 
-  // Events
   onConfigChanged(handler: (cfg: AppConfig) => void) {
-    const fn = (_: any, payload: AppConfig) => handler(payload);
+    const fn = (_ev: any, payload: AppConfig) => handler(payload);
     ipcRenderer.on(CH.EVT_CONFIG_CHANGED, fn);
     return () => ipcRenderer.off(CH.EVT_CONFIG_CHANGED, fn);
   },
-  onModsChanged(handler: () => void) {
-    const fn = () => handler();
-    ipcRenderer.on(CH.EVT_MODS_CHANGED, fn);
-    return () => ipcRenderer.off(CH.EVT_MODS_CHANGED, fn);
+
+  // ----- Window controls -----
+  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+  windowClose: () => ipcRenderer.invoke("window:close"),
+  isWindowMaximized: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:isMaximized"),
+
+
+  // ----- Background (Phase 4A.2) -----
+  bgGet: () => invoke(CH.BG_GET),
+  bgChoose: () => invoke(CH.BG_CHOOSE),
+  bgSet: (p: string) => invoke(CH.BG_SET, p),
+  bgReset: () => invoke(CH.BG_RESET),
+
+  // ----- Mods -----
+  // List rows as provided by main.ts listMods()
+  listMods(): Promise<{ ok: true; mods: ModRow[] } | { ok: false; message: string }> {
+    // keep the old fallback for safety; your main currently only uses "mods:list"
+    return invoke("mods:list").catch(() => invoke("mods:listBoth"));
   },
 
-  // Generic IPC bridge needed by hooks like useVaultWatcher
-  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  reconcileMods(desired: string[]): Promise<{ ok: boolean; message?: string }> {
+    return invoke(CH.MODS_RECONCILE, desired).catch(() => invoke("mods:apply", desired));
+  },
+
+  deleteMod(name: string): Promise<{ ok: boolean; message?: string }> {
+    return invoke(CH.MODS_DELETE, name);
+  },
+
+  // ----- Play / Launch -----
+  canLaunch(): Promise<{ isModPlay: boolean }> {
+    return invoke(CH.PLAY_CAN);
+  },
+
+  launch(): Promise<{ ok: boolean; mode?: "mod" | "vanilla"; exitCode?: number; message?: string }> {
+    return invoke(CH.PLAY_LAUNCH);
+  },
+
+  // Convenience wrappers you already call from the main UI
+  launchModPlay(): Promise<{ ok: boolean; mode?: "mod"; exitCode?: number; message?: string }> {
+    return invoke(CH.LAUNCH_MOD);
+  },
+
+  launchVanillaPlay(): Promise<{ ok: boolean; mode?: "vanilla"; exitCode?: number; message?: string }> {
+    return invoke(CH.LAUNCH_VAN);
+  },
+
+  manualGameDataSave(): Promise<{ ok: boolean; files?: number; bytes?: number; error?: string }> {
+    return invoke(CH.MANUAL_SAVE);
+  },
+
+  // ----- Immutable Managed Paths (Advanced Settings → Managed Paths) -----
+  async getImmutablePaths(): Promise<ImmutablePaths> {
+    const res = await invoke<any>(CH.PATHS_IMMUTABLE_GET);
+    // main/src/main/ipc/paths.ts returns { ok, modsVaultPath, modPlayVaultPath, activeModsPath }
+    if (!res || res.ok === false) {
+      return { modsVaultPath: "", modPlayVaultPath: "" };
+    }
+    return {
+      modsVaultPath: res.modsVaultPath ?? "",
+      modPlayVaultPath: res.modPlayVaultPath ?? "",
+    };
+  },
+
+  // ----- Generic bridge (used by hooks like useVaultWatcher) -----
+  invoke: (channel: string, ...args: any[]) => invoke(channel, ...args),
   on: (channel: string, listener: (e: any, payload: any) => void) =>
     ipcRenderer.on(channel, listener),
   removeListener: (channel: string, listener: any) =>
     ipcRenderer.removeListener(channel, listener),
 });
+
+// Handy debug in DevTools:
+console.log(
+  "[PRELOAD] window.api exposed:",
+  Object.keys((globalThis as any).window?.api || {})
+);
