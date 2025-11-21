@@ -3,6 +3,7 @@ import ManagedPaths from "./ManagedPaths";
 import BackgroundPicker from "../components/BackgroundPicker";
 import { useVaultWatcher } from "../hooks/useVaultWatcher";
 import WatcherActivity from "./WatcherActivity";
+import { brassButton } from "../../ui/theme";
 
 type Tab = "paths" | "watcher";
 
@@ -12,33 +13,39 @@ function basename(p?: string) {
   return p.replace(/^.*[\\/]/, "");
 }
 
+// Imperial-brass themed colors for this screen
+const mainTextColor = "#f4e3c0";
+const subtextColor = "rgba(244, 227, 192, 0.7)";
+const panelBorder = "1px solid rgba(255, 215, 128, 0.35)";
+const panelBg = "rgba(0, 0, 0, 0.65)";
+
+// Tabs reuse the global brass button look, with minor tweaks
+const tabBase: React.CSSProperties = {
+  ...brassButton,
+  padding: "6px 12px",
+  borderRadius: 999,
+  fontSize: 13,
+};
+
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  ...tabBase,
+  opacity: active ? 1 : 0.7,
+  borderColor: active
+    ? "rgba(255, 215, 128, 0.95)"
+    : "rgba(140, 110, 60, 0.9)",
+  boxShadow: active
+    ? brassButton.boxShadow
+    : "0 0 0 1px rgba(0,0,0,0.9) inset, 0 1px 2px rgba(0,0,0,0.7)",
+});
+
 export default function AdvancedSettingsMenu() {
   const [tab, setTab] = React.useState<Tab>("paths");
   const { lastEvent } = useVaultWatcher();
 
-  const isDark = true;
-  const colors = {
-    bg: isDark ? "#1a1a1a" : "#b9b9b9ff",
-    panel: isDark ? "#222" : "#fdfdfd",
-    text: isDark ? "#e5e5e5" : "#222",
-    subtext: isDark ? "#999" : "#555",
-    border: isDark ? "#333" : "#ddd",
-    active: isDark ? "#2a2a2a" : "#eee",
-    accent: "#00c4b3",
-  };
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 12px",
-    borderRadius: 8,
-    border: `1px solid ${active ? colors.accent : colors.border}`,
-    background: active ? colors.active : "transparent",
-    color: active ? colors.accent : colors.text,
-    cursor: "pointer",
-    fontWeight: active ? 600 : 400,
-  });
-
   return (
-    <div style={{ color: colors.text, background: colors.bg, padding: 8 }}>
+    // Parent card from App.tsx already provides the brass panel;
+    // here we just inherit and apply brass-friendly text colors.
+    <div style={{ color: mainTextColor, padding: 8 }}>
       {/* Header + watcher pulse */}
       <div
         style={{
@@ -48,9 +55,9 @@ export default function AdvancedSettingsMenu() {
           marginBottom: 12,
         }}
       >
-        <div style={{ fontSize: 16, fontWeight: 600 }}>Advanced Settings</div>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>Options</div>
         <div
-          style={{ marginLeft: "auto", fontSize: 12, color: colors.subtext }}
+          style={{ marginLeft: "auto", fontSize: 12, color: subtextColor }}
           aria-live="polite"
         >
           <span
@@ -61,7 +68,9 @@ export default function AdvancedSettingsMenu() {
               width: 8,
               height: 8,
               borderRadius: 999,
-              background: lastEvent ? colors.accent : colors.border,
+              background: lastEvent
+                ? "#ffd780"
+                : "rgba(140, 110, 60, 0.9)",
               marginRight: 8,
             }}
           />
@@ -107,11 +116,11 @@ export default function AdvancedSettingsMenu() {
         role="tabpanel"
         aria-labelledby={tab === "paths" ? "tab-paths" : "tab-watcher"}
         style={{
-          border: `1px solid ${colors.border}`,
+          border: panelBorder,
           borderRadius: 12,
           padding: 12,
-          background: colors.panel,
-          color: colors.text,
+          background: panelBg,
+          color: mainTextColor,
         }}
       >
         {tab === "paths" ? (
@@ -123,7 +132,7 @@ export default function AdvancedSettingsMenu() {
               style={{
                 marginTop: 16,
                 paddingTop: 12,
-                borderTop: `1px solid ${colors.border}`,
+                borderTop: panelBorder,
               }}
             >
               <div
@@ -139,7 +148,7 @@ export default function AdvancedSettingsMenu() {
               <div
                 style={{
                   fontSize: 12,
-                  color: colors.subtext,
+                  color: subtextColor,
                   marginTop: 6,
                 }}
               >
@@ -151,21 +160,6 @@ export default function AdvancedSettingsMenu() {
         ) : (
           <WatcherActivity />
         )}
-      </div>
-
-      {/* Mirror-only footnote */}
-      <div
-        style={{
-          marginTop: 10,
-          fontSize: 12,
-          color: colors.subtext,
-          lineHeight: 1.4,
-        }}
-      >
-        <strong>Mirror-only behavior:</strong> If <code>Mods/</code> is empty →
-        Vanilla Play (no save touches). If populated → Mod Play: pre-launch
-        mirrors <code>mod_play_vault → config</code> (when vault has data), and
-        on exit mirrors <code>config → mod_play_vault</code>.
       </div>
     </div>
   );

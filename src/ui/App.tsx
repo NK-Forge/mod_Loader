@@ -9,6 +9,12 @@ import AdvancedSettingsMenu from "../renderer/views/AdvancedSettingsMenu";
 import defaultBg from "../renderer/assets/default_bg.jpg";
 import { OperationStatusBar, OperationStatus } from "./OperationStatusBar";
 import { WindowTitleBar } from "./WindowTitleBar";
+import { 
+  brassCard,
+  brassButton,
+  brassLaunchButton,
+  zebraRow,
+} from "./theme";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
 type AppConfig = {
@@ -260,6 +266,22 @@ export default function App() {
     }
   };
 
+  const openActiveModsFolder = () => {
+    if (!cfg.activeModsPath) return;
+    try {
+      if (api.revealPath) {
+        // preferred: dedicated helper from preload
+        api.revealPath(cfg.activeModsPath);
+      } else if (api.invoke) {
+        // fallback if you only have a generic invoke bridge
+        api.invoke("paths:reveal", cfg.activeModsPath);
+      }
+    } catch (e) {
+      console.warn("Failed to open active mods folder:", e);
+    }
+  };
+
+
   const manualGameDataSave = async () => {
     const ok = confirm(
       "Overwrite Mod Play Vault with current Steam save/config files?\n" +
@@ -299,36 +321,25 @@ export default function App() {
   };
 
   // ---------- styles ----------
-  const card: React.CSSProperties = {
-    border: "1px solid #333",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-    background: "rgba(0,0,0,0.3)",
-  };
+  const card = brassCard;
+  const btn = brassButton;
+  const zebra = zebraRow;
+  const launchBtnStyle = brassLaunchButton;
+
   const toolbar: React.CSSProperties = {
     display: "flex",
     gap: 8,
     justifyContent: "flex-end",
     marginBottom: 8,
   };
-  const btn: React.CSSProperties = {
-    padding: "6px 10px",
-    borderRadius: 8,
-    border: "1px solid #666",
-    background: "#444",
-    color: "#fff",
-    cursor: "pointer",
+
+  const headerRow: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   };
-  const zebra = (i: number): React.CSSProperties =>
-    i % 2 ? { background: "rgba(255,255,255,0.04)" } : {};
-  const launchBtnStyle = (enabled: boolean): React.CSSProperties => ({
-    ...btn,
-    opacity: enabled ? 1 : 0.35,
-    cursor: enabled ? "pointer" : "default",
-    background: enabled ? "#444" : "#222",
-    borderColor: enabled ? "#666" : "#333",
-  });
+
 
   // ---------- background wrapper styles ----------
   const appBg: React.CSSProperties = {
@@ -369,7 +380,7 @@ export default function App() {
                 marginBottom: 12,
               }}
             >
-              <h2 style={{ margin: 0, color: "#fff" }}>Advanced Settings</h2>
+              <h2 style={{ margin: 0, color: "#fff" }}></h2>
               <button
                 style={btn}
                 onClick={() => setShowAdvanced(false)}
@@ -399,43 +410,37 @@ export default function App() {
         <WindowTitleBar />
 
         <div style={card}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ color: "#7bd17b", marginBottom: 4 }}>
-                {cfg.autoDetected
-                  ? "Auto-detected defaults where possible."
-                  : "No auto-detection captured."}
-              </div>
-              <div
-                style={{
-                  color: pathsOk ? "#7bd17b" : "#ff9f9f",
-                  marginBottom: 8,
-                }}
-              >
-                {pathsOk
-                  ? "Ready: All key paths are set."
-                  : "Set all key paths in Advanced Settings before launching."}
-              </div>
-            </div>
+          {/* Top control row: one line, left + right */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
+            {/* Left: Open Mods Folder */}
+            <button
+              style={btn}
+              onClick={openActiveModsFolder}
+              disabled={!cfg.activeModsPath}
+              title={
+                cfg.activeModsPath
+                  ? `Open mods folder:\n${cfg.activeModsPath}`
+                  : "Active Mods path is not set. Configure it in Advanced Settings."
+              }
+            >
+              Open Mods Folder
+            </button>
+
+            {/* Right: other controls */}
             <div
               style={{
-                fontSize: 12,
-                opacity: 0.8,
-                lineHeight: 1.4,
-                marginBottom: 8,
+                justifySelf: "end",
+                display: "flex",
+                gap: 8,
               }}
             >
-              <div>
-                <strong>Active Mods:</strong>{" "}
-                {cfg.activeModsPath || "(not set)"}
-              </div>
-              <div>
-                <strong>Mods Vault:</strong>{" "}
-                {cfg.modsVaultPath || "(not set)"}
-              </div>
-            </div>
-
-            <div style={toolbar}>
               <button
                 style={btn}
                 onClick={manualGameDataSave}
@@ -447,10 +452,11 @@ export default function App() {
                 Refresh
               </button>
               <button style={btn} onClick={() => setShowAdvanced(true)}>
-                Advanced Settings
+                Options
               </button>
             </div>
           </div>
+
 
           <div
             style={{
