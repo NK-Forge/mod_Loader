@@ -55,6 +55,128 @@ let config: AppConfig = {
   backgroundImagePath: "",
 };
 
+async function detectPaths() {
+  const result: {
+    gameRoot: string;
+    gameExe: string;
+    activeModsPath: string;
+    saveDataPath: string;
+  } = {
+    gameRoot: "",
+    gameExe: "",
+    activeModsPath: "",
+    saveDataPath: "",
+  };
+
+  // 1) Prefer any existing config values that are valid
+  if (config.gameRoot && fs.existsSync(config.gameRoot)) {
+    result.gameRoot = config.gameRoot;
+  }
+
+  if (config.gameExe && fs.existsSync(config.gameExe)) {
+    result.gameExe = config.gameExe;
+  }
+
+  if (config.activeModsPath && fs.existsSync(config.activeModsPath)) {
+    result.activeModsPath = config.activeModsPath;
+  }
+
+  if (config.saveDataPath && fs.existsSync(config.saveDataPath)) {
+    result.saveDataPath = config.saveDataPath;
+  }
+
+  // 2) If we still don't have a game root, try common SM2 install paths
+  const candidateRoots = [
+    result.gameRoot,
+    config.gameRoot,
+    "E:\\Steam\\steamapps\\common\\Space Marine 2",
+    "C:\\Steam\\steamapps\\common\\Space Marine 2",
+    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Space Marine 2",
+  ].filter((p): p is string => !!p);
+
+  if (!result.gameRoot) {
+    for (const root of candidateRoots) {
+      if (fs.existsSync(root)) {
+        result.gameRoot = root;
+        break;
+      }
+    }
+  }
+
+  // 3) Game EXE under gameRoot
+  if (!result.gameExe && result.gameRoot) {
+    const exe = path.join(
+      result.gameRoot,
+      "Warhammer 40000 Space Marine 2.exe"
+    );
+    if (fs.existsSync(exe)) {
+      result.gameExe = exe;
+    }
+  }
+
+  // 4) Active mods folder under gameRoot
+  if (!result.activeModsPath && result.gameRoot) {
+    const mods = path.join(
+      result.gameRoot,
+      "client_pc",
+      "root",
+      "mods"
+    );
+    if (fs.existsSync(mods)) {
+      result.activeModsPath = mods;
+    }
+  }
+
+  // 5) Save data path in AppData\Saber\Space Marine 2\storage\steam\<id>\Main\config
+  if (!result.saveDataPath) {
+    const userRoot = process.env.USERPROFILE || process.env.HOME;
+    if (userRoot) {
+      const steamRoot = path.join(
+        userRoot,
+        "AppData",
+        "Local",
+        "Saber",
+        "Space Marine 2",
+        "storage",
+        "steam"
+      );
+
+      if (fs.existsSync(steamRoot)) {
+        const level1 = fs.readdirSync(steamRoot, { withFileTypes: true })
+                        .filter(d => d.isDirectory())
+                        .map(d => d.name);
+
+        for (const d1 of level1) {
+          const first = path.join(steamRoot, d1);
+
+          // Case A: ...\steam\<entry>\Main\config
+          let candidate = path.join(first, "Main", "config");
+          if (fs.existsSync(candidate)) {
+            result.saveDataPath = candidate;
+            break;
+          }
+
+          // Case B: ...\steam\user\<steamId>\Main\config
+          const subdirs = fs.readdirSync(first, { withFileTypes: true })
+                            .filter(d => d.isDirectory())
+                            .map(d => d.name);
+
+          for (const d2 of subdirs) {
+            candidate = path.join(first, d2, "Main", "config");
+            if (fs.existsSync(candidate)) {
+              result.saveDataPath = candidate;
+              break;
+            }
+          }
+
+          if (result.saveDataPath) break;
+        }
+      }
+    }
+  }
+  return result;
+}
+
 function bgStorageDir() {
   return path.join(app.getPath("userData"), "backgrounds");
 }
@@ -157,14 +279,76 @@ async function mirrorSavesIntoVault(): Promise<void> {
   await replaceDirContents(from, to);
 }
 
-function launchGameExe(): { ok: boolean; pid?: number; message?: string; child?: ReturnType<typeof spawn> } {
-  const exe = config.gameExe;
-  if (!exe || !fs.existsSync(exe)) return { ok: false, message: "Game executable not configured." };
+// ---- Game launch helpers ----
+
+function resolveGameExe(): string | null {
+  // 1) If the user explicitly set a gameExe and it's a real file, use it
+  if (config.gameExe) {
+    try {
+      const st = fs.statSync(config.gameExe);
+      if (st.isFile()) {
+        return config.gameExe;
+      }
+    } catch {
+      // fall through to auto-detect
+    }
+  }
+
+  // 2) Otherwise, derive it from Game Root:
+  //    <gameRoot>\Warhammer 40000 Space Marine 2.exe
+  if (!config.gameRoot) return null;
+
+  const exe = path.join(
+    config.gameRoot,
+    "Warhammer 40000 Space Marine 2.exe"
+  );
+
   try {
-    const child = spawn(exe, [], { detached: false, stdio: "ignore" });
+    const st = fs.statSync(exe);
+    if (st.isFile()) {
+      return exe;
+    }
+  } catch {
+    // not found
+  }
+
+  return null;
+}
+
+function launchGameExe(): {
+  ok: boolean;
+  pid?: number;
+  message?: string;
+  child?: ReturnType<typeof spawn>;
+} {
+  const exe = resolveGameExe();
+
+  if (!exe) {
+    return {
+      ok: false,
+      message:
+        "Could not find 'Warhammer 40000 Space Marine 2.exe'. Check Game Root in Options or configure the game .exe path.",
+    };
+  }
+
+  try {
+    const child = spawn(exe, [], {
+      cwd: path.dirname(exe),
+      detached: false,
+      stdio: "ignore",
+    });
+
+    child.on("error", (err) => {
+      console.error("[launchGameExe] child error:", err);
+    });
+
     return { ok: true, pid: child.pid, child };
   } catch (e: any) {
-    return { ok: false, message: e?.message || "Failed to launch game." };
+    console.error("[launchGameExe] spawn failed:", e);
+    return {
+      ok: false,
+      message: e?.message || "Failed to launch game.",
+    };
   }
 }
 
@@ -217,32 +401,75 @@ ipcMain.handle("window:close", () => {
 });
 
 // ----------------------- IPC: Config -----------------------
+ipcMain.handle("paths:detect", async () => detectPaths());
+
 ipcMain.handle("config:get", () => config);
 ipcMain.handle("config:set", (_e, next: Partial<AppConfig>) => {
-  const prev = { ...config };
-  replaceConfig(next); // persists + emits "config:changed"
+  const prev = { ...config, ...next };
+  //replaceConfig(next); // persists + emits "config:changed"
 
   // If path fields changed, rebind watchers (mods + modPlay)
   const pathsChanged =
-    (next.activeModsPath && next.activeModsPath !== prev.activeModsPath) ||
-    (next.modPlayVaultPath && next.modPlayVaultPath !== prev.modPlayVaultPath);
+    prev.modsVaultPath !== config.modsVaultPath ||
+    prev.modPlayVaultPath !== config.modPlayVaultPath ||
+    prev.saveDataPath !== config.saveDataPath;
 
   if (pathsChanged) {
     try {
       watchRegistry.setPaths({
-        mods: config.activeModsPath || "",
+        mods: config.modsVaultPath || "",
         modPlay: config.modPlayVaultPath || "",
+        backup: config.saveDataPath || "",
       });
     } catch (err) {
-      console.error("[Phase3C] watchers:setPaths failed", err);
+      console.error("[Phase5] watchers:setPaths on config change failed", err);
     }
   }
-  return { ok: true };
+
+  return config;
+});
+
+// ---------- Dialog Handler - Browse for Folder -----------
+ipcMain.handle("dialog:browseFolder", async (event) => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
+  });
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  
+  return result.filePaths[0];
+});
+
+// ----------------------- IPC: FS Utilities -----------------------
+ipcMain.handle("fs:testWrite", async (_event, targetPath: string) => {
+  try {
+    const testFile = path.join(targetPath, ".write-test");
+    await fsp.writeFile(testFile, "test", "utf8");
+    await fsp.unlink(testFile);
+    return true;
+  } catch (error) {
+    console.error(`Write test failed for ${targetPath}:`, error);
+    return false;
+  }
+});
+
+// ---------------- Ensure directories exist ----------------------
+ipcMain.handle("fs:ensureDirs", async (_event, paths: string[]) => {
+  try {
+    for (const dirPath of paths) {
+      await fsp.mkdir(dirPath, { recursive: true });
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error("Failed to create directories:", error);
+    const err = error as Error;
+    return { ok: false, message: err.message };
+  }
 });
 
 // ----------------------- IPC: Mods -----------------------
-
-// --- Mods: list ---
 ipcMain.handle("mods:list", async () => {
   try {
     const mods = await listMods(
@@ -398,32 +625,67 @@ ipcMain.handle("bg:reset", async () => {
   return { ok: true };
 });
 
+// ----------------------- IPC: Setup Wizard -----------------------
+ipcMain.handle("setup:complete", async (_event, configUpdate: Partial<AppConfig>) => {
+  try {
+    // Use the existing replaceConfig function which handles saving to disk
+    replaceConfig({
+      ...configUpdate,
+      setupComplete: true,
+    });
+    
+    return { ok: true };
+  } catch (error) {
+    console.error("Setup completion failed:", error);
+    const err = error as Error;
+    return { ok: false, message: err.message };
+  }
+});
+
 // ----------------------- App Lifecycle -----------------------
 app.whenReady().then(async () => {
   loadConfigFromDisk();
+
   await Promise.all([
     ensureDir(config.modsVaultPath),
     ensureDir(config.modPlayVaultPath),
+    ensureDir(config.saveDataPath),
   ]);
-  createWindow();
 
-  // Phase 3C: attach watcher IPC and set initial paths
+  await createWindow();
+
   if (mainWindow) {
-    registerVaultWatcherIPC(mainWindow);
-  }
-  try {
-    watchRegistry.setPaths({
-      mods: config.activeModsPath || "",
-      modPlay: config.modPlayVaultPath || "",
+    // Wait until renderer is ready to receive events
+    await new Promise<void>((resolve) => {
+      if (mainWindow!.webContents.isLoading()) {
+        mainWindow!.webContents.once("did-finish-load", () => resolve());
+      } else {
+        resolve();
+      }
     });
-  } catch (e) {
-    console.error("[Phase3C] watcher init error", e);
+
+    // Attach this window to the watcher registry / vault IPC
+    registerVaultWatcherIPC(mainWindow);
+
+    // Initial watcher paths – **vaults**, not active mods
+    try {
+      watchRegistry.setPaths({
+        mods: config.modsVaultPath || "",
+        modPlay: config.modPlayVaultPath || "",
+        backup: config.saveDataPath || "",
+      });
+    } catch (err) {
+      console.error("[Phase5] initial watchers:setPaths failed", err);
+    }
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
   });
 });
+
 
 app.on("before-quit", async () => {
   try { await (watchRegistry as any).disposeAll?.(); } catch {}

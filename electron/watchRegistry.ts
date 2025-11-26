@@ -9,6 +9,8 @@ type VaultPaths = { mods?: string; modPlay?: string; backup?: string };
 type EventType = "added" | "removed" | "changed" | "renamed" | "refresh";
 type WatchEvent = { domain: Domain; type: EventType; file: string; at: number };
 
+const FLUSH_INTERVAL_MS = 250;
+const FLUSH_MAX_BATCH = 25;
 const DEFAULT_IGNORES =
   /(^|[/\\])(\.DS_Store|Thumbs\.db|desktop\.ini|\.git|node_modules|\.idea|\.vscode)$/i;
 
@@ -24,7 +26,8 @@ class WatchRegistry {
   private watchers: Partial<Record<Domain, FSWatcher>> = {};
   private paths: VaultPaths = {};
   private windows = new Set<BrowserWindow>();
-  private burstSend = debounce((evt: WatchEvent) => this.broadcast(evt), 350);
+  private eventQueue: WatchEvent[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
 
   attach(win: BrowserWindow) {
     this.windows.add(win);
@@ -57,6 +60,38 @@ class WatchRegistry {
     await Promise.all(Object.values(this.watchers).map(w => w?.close().catch(() => {})));
     this.watchers = {};
   }
+
+  private queueEvent(evt: WatchEvent) {
+    this.eventQueue.push(evt);
+
+    // Optional: debug
+    // console.log("[watchRegistry] queueEvent:", evt);
+
+    if (this.eventQueue.length >= FLUSH_MAX_BATCH) {
+      this.flushQueue();
+    } else if (!this.flushTimer) {
+      this.flushTimer = setTimeout(
+        () => this.flushQueue(),
+        FLUSH_INTERVAL_MS
+      );
+    }
+  }
+
+  private flushQueue() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    if (this.eventQueue.length === 0) return;
+
+    const batch = this.eventQueue.splice(0);
+
+    for (const evt of batch) {
+      this.broadcast(evt);
+    }
+  }
+
 
   private async rebuild() {
     await this.disposeAll();
@@ -98,10 +133,15 @@ class WatchRegistry {
     watcher._nkRoot = root;
 
     const send = (type: EventType, file: string) => {
-      // Normalize to forward slashes for renderer consistency
       const norm = file.split(path.sep).join("/");
-      this.burstSend({ domain, type, file: norm, at: Date.now() });
+      this.queueEvent({
+        domain,
+        type,
+        file: norm,
+        at: Date.now(),
+      });
     };
+
 
     watcher
       .on("add", (f) => send("added", f))

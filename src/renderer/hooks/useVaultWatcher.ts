@@ -1,75 +1,145 @@
 // src/renderer/hooks/useVaultWatcher.ts
 import * as React from "react";
 
-type WatchEvent = {
-  domain: "mods" | "modPlay" | "backup";
-  type: "added" | "removed" | "changed" | "renamed" | "refresh";
-  file: string;
-  at: number;
-};
+export type WatcherDomain = "mods" | "modPlay" | "backup" | string;
 
-type Api = {
-  invoke: (channel: string, ...args: any[]) => Promise<any>;
-  on: (channel: string, listener: (_: any, payload: any) => void) => void;
-  removeListener: (channel: string, listener: (_: any, payload: any) => void) => void;
-};
-
-function getApi(): Api | null {
-  // Works for common preload bridges: window.api, window.electron, etc.
-  const w = window as any;
-  if (w.api?.invoke && w.api?.on) return w.api as Api;
-  if (w.electron?.ipcRenderer?.invoke) {
-    const ir = w.electron.ipcRenderer;
-    return {
-      invoke: ir.invoke.bind(ir),
-      on: ir.on.bind(ir),
-      removeListener: ir.removeListener.bind(ir),
-    };
-  }
-  // Last resort (non-isolated env)
-  try {
-    const { ipcRenderer } = (window as any).require?.("electron") ?? {};
-    if (ipcRenderer) {
-      return {
-        invoke: ipcRenderer.invoke.bind(ipcRenderer),
-        on: ipcRenderer.on.bind(ipcRenderer),
-        removeListener: ipcRenderer.removeListener.bind(ipcRenderer),
-      };
-    }
-  } catch {}
-  return null;
+export interface WatcherEvent {
+  ts: number;
+  domain: WatcherDomain;
+  type: string;
+  file?: string;
+  detail?: string;
+  raw?: any;
 }
 
+type Api = {
+  invoke?: (channel: string, ...args: any[]) => Promise<any>;
+  on?: (
+    channel: string,
+    listener: (_event: any, payload: any) => void
+  ) => void;
+  removeListener?: (
+    channel: string,
+    listener: (_event: any, payload: any) => void
+  ) => void;
+};
+
+const getApi = (): Api | undefined => {
+  return (window as any).api as Api | undefined;
+};
+
 export function useVaultWatcher() {
-  const [lastEvent, setLastEvent] = React.useState<WatchEvent | null>(null);
-  const api = React.useMemo(getApi, []);
+  const [events, setEvents] = React.useState<WatcherEvent[]>([]);
+  const [lastEvent, setLastEvent] = React.useState<WatcherEvent | null>(null);
+
+  // DEBUG: Log state changes
+  React.useEffect(() => {
+    console.log("[useVaultWatcher] events state updated, length:", events.length);
+  }, [events]);
 
   React.useEffect(() => {
-    if (!api) return;
-    const handler = (_: any, evt: WatchEvent) => setLastEvent(evt);
-    api.on("watchers:event", handler);
-    return () => {
-      api.removeListener?.("watchers:event", handler);
+    console.log("[useVaultWatcher] lastEvent state updated:", lastEvent);
+  }, [lastEvent]);
+
+  // Subscribe once to "watchers:event" from watchRegistry.broadcast(...)
+  React.useEffect(() => {
+    const api = getApi();
+    
+    if (!api?.on || !api?.removeListener) {
+      console.warn("[useVaultWatcher] api.on/removeListener not available");
+      return;
+    }
+
+    const handler = (_event: any, payload: any) => {
+      console.log("[watchers:event] payload from main:", payload);
+
+      const normalized: WatcherEvent = {
+        ts:
+          typeof payload?.ts === "number"
+            ? payload.ts
+            : typeof payload?.at === "number"
+            ? payload.at
+            : Date.now(),
+        domain: String(payload?.domain ?? "unknown"),
+        type: String(payload?.type ?? "unknown"),
+        file: payload?.file,
+        detail: payload?.detail,
+        raw: payload,
+      };
+
+      console.log("[watchers:event] normalized event:", normalized);
+      
+      setLastEvent((prev) => {
+        console.log("[watchers:event] setLastEvent called, prev:", prev, "new:", normalized);
+        return normalized;
+      });
+      
+      setEvents((prev) => {
+        console.log("[watchers:event] setEvents called, prev length:", prev.length);
+        const next = [normalized, ...prev];
+        const sliced = next.slice(0, 200);
+        console.log("[watchers:event] new events length:", sliced.length);
+        return sliced;
+      });
     };
-  }, [api]);
+
+    api.on("watchers:event", handler);
+    console.log("[useVaultWatcher] Listener registered");
+
+    return () => {
+      try {
+        api.removeListener!("watchers:event", handler);
+        console.log("[useVaultWatcher] Listener removed");
+      } catch (e) {
+        console.warn("[useVaultWatcher] error removing listener", e);
+      }
+    };
+  }, []);
 
   const setPaths = React.useCallback(
-    async (paths: { mods?: string; modPlay?: string; backup?: string }) => {
-      if (!api) return;
-      await api.invoke("watchers:setPaths", paths);
+    (paths: { mods?: string; modPlay?: string; backup?: string }) => {
+      const api = getApi();
+      if (!api?.invoke) return;
+      api
+        .invoke("watchers:setPaths", paths)
+        .catch((e) =>
+          console.warn("[useVaultWatcher] watchers:setPaths failed:", e)
+        );
     },
-    [api]
+    []
   );
 
-  const enable = React.useCallback(async (domain: "mods" | "modPlay" | "backup") => {
-    if (!api) return;
-    await api.invoke("watchers:enable", domain);
-  }, [api]);
+  const enable = React.useCallback(
+    (domain: WatcherDomain) => {
+      const api = getApi();
+      if (!api?.invoke) return;
+      api
+        .invoke("watchers:enable", domain)
+        .catch((e) =>
+          console.warn("[useVaultWatcher] watchers:enable failed:", e)
+        );
+    },
+    []
+  );
 
-  const disable = React.useCallback(async (domain: "mods" | "modPlay" | "backup") => {
-    if (!api) return;
-    await api.invoke("watchers:disable", domain);
-  }, [api]);
+  const disable = React.useCallback(
+    (domain: WatcherDomain) => {
+      const api = getApi();
+      if (!api?.invoke) return;
+      api
+        .invoke("watchers:disable", domain)
+        .catch((e) =>
+          console.warn("[useVaultWatcher] watchers:disable failed:", e)
+        );
+    },
+    []
+  );
 
-  return { lastEvent, setPaths, enable, disable };
+  const clear = React.useCallback(() => {
+    console.log("[useVaultWatcher] clear() called");
+    setEvents([]);
+    setLastEvent(null);
+  }, []);
+
+  return { events, lastEvent, setPaths, enable, disable, clear };
 }

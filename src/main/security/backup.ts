@@ -12,8 +12,22 @@ import fsp from "fs/promises";
 import path from "path";
 
 /** mkdir -p */
-export async function ensureDir(p: string): Promise<void> {
-  await fsp.mkdir(p, { recursive: true });
+export async function ensureDir(dir?: string | null): Promise<void> {
+  // 🚫 No-op for empty / missing paths
+  if (!dir || !dir.trim()) {
+    return;
+  }
+
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+  } catch (err: any) {
+    // If it already exists, we're good; otherwise bubble up
+    if (err && err.code === "EEXIST") {
+      return;
+    }
+    console.error("[ensureDir] failed for", dir, err);
+    throw err;
+  }
 }
 
 /** Create a timestamped subfolder (e.g., 20251110-101523-label) and return its path. */

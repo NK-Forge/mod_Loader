@@ -9,6 +9,7 @@ import AdvancedSettingsMenu from "../renderer/views/AdvancedSettingsMenu";
 import defaultBg from "../renderer/assets/default_bg.jpg";
 import { OperationStatusBar, OperationStatus } from "./OperationStatusBar";
 import { WindowTitleBar } from "./WindowTitleBar";
+import { useVaultWatcher } from "../renderer/hooks/useVaultWatcher";
 import { 
   brassCard,
   brassButton,
@@ -46,7 +47,9 @@ export default function App() {
     saveDataPath: "",
     installStrategy: "hardlink",
   });
-
+  const watcher = useVaultWatcher();
+  const { setPaths: setWatcherPaths, enable: enableWatcher } = watcher;
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [mods, setMods] = useState<ModRow[]>([]);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [launching, setLaunching] = useState(false);
@@ -112,6 +115,7 @@ export default function App() {
 
     (async () => {
       await refreshConfig();
+      setConfigLoaded(true);
       await refreshMods();
       await refreshBg(); // initial bg fetch on mount
 
@@ -133,6 +137,34 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!configLoaded) return;
+
+    const paths: { mods?: string; modPlay?: string; backup?: string } = {};
+    if (cfg.modsVaultPath) paths.mods = cfg.modsVaultPath;
+    if (cfg.modPlayVaultPath) paths.modPlay = cfg.modPlayVaultPath;
+    if (cfg.saveDataPath) paths.backup = cfg.saveDataPath;
+
+    if (Object.keys(paths).length === 0) {
+      // Nothing to watch yet
+      return;
+    }
+
+    console.log("[Watchers] Initializing with paths:", paths);
+    setWatcherPaths(paths);
+
+    if (cfg.modsVaultPath) enableWatcher("mods");
+    if (cfg.modPlayVaultPath) enableWatcher("modPlay");
+    if (cfg.saveDataPath) enableWatcher("backup");
+  }, [
+    configLoaded,
+    cfg.modsVaultPath,
+    cfg.modPlayVaultPath,
+    cfg.saveDataPath,
+    setWatcherPaths,
+    enableWatcher,
+  ]);
 
   useEffect(() => {
     refreshMods();
@@ -391,7 +423,10 @@ export default function App() {
             </div>
 
             {AdvancedSettingsMenu ? (
-              <AdvancedSettingsMenu />
+              (() => {
+                const AdvSettings = AdvancedSettingsMenu as any;
+                return <AdvSettings watcher={watcher} />;
+              })()
             ) : (
               <div style={{ color: "#ccc" }}>
                 Advanced Settings component not found.

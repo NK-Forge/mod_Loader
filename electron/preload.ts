@@ -73,7 +73,8 @@ async function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
 }
 
 contextBridge.exposeInMainWorld("api", {
-  // ----- Config -----
+
+
   getConfig(): Promise<AppConfig> {
     return invoke<AppConfig>(CH.CONFIG_GET);
   },
@@ -88,6 +89,13 @@ contextBridge.exposeInMainWorld("api", {
     return () => ipcRenderer.off(CH.EVT_CONFIG_CHANGED, fn);
   },
 
+  // ----- Path detection for Setup Wizard -----
+  detectPaths: () => invoke("paths:detect"),
+  browseFolder: () => invoke("dialog:browseFolder"),
+  testWrite: (path: string) => invoke("fs:testWrite", path),
+  ensureDirs: (paths: string[]) => invoke("fs:ensureDirs", paths),
+  completeSetup: (config: Partial<AppConfig>) => invoke("setup:complete", config),
+  
   // ----- Window controls -----
   windowMinimize: () => ipcRenderer.invoke("window:minimize"),
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
@@ -149,6 +157,22 @@ contextBridge.exposeInMainWorld("api", {
     return {
       modsVaultPath: res.modsVaultPath ?? "",
       modPlayVaultPath: res.modPlayVaultPath ?? "",
+    };
+  },
+
+  watchersSetPaths: (paths: { mods?: string; modPlay?: string; backup?: string }) =>
+    ipcRenderer.invoke("watchers:setPaths", paths),
+
+  watchersEnable: (domain: string) =>
+    ipcRenderer.invoke("watchers:enable", domain),
+
+  onWatcherEvent: (cb: (payload: any) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
+      cb(payload);
+    };
+    ipcRenderer.on("watchers:event", listener);
+    return () => {
+      ipcRenderer.removeListener("watchers:event", listener);
     };
   },
 

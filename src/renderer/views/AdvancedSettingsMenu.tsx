@@ -1,11 +1,19 @@
 import React from "react";
 import ManagedPaths from "./ManagedPaths";
 import BackgroundPicker from "../components/BackgroundPicker";
-import { useVaultWatcher } from "../hooks/useVaultWatcher";
+import { WatcherEvent } from "../hooks/useVaultWatcher";
 import WatcherActivity from "./WatcherActivity";
 import { brassButton } from "../../ui/theme";
 
 type Tab = "paths" | "watcher";
+type Watcher = {
+  events: WatcherEvent[];
+  lastEvent: WatcherEvent | null;
+  clear: () => void;
+};
+type Props = {
+  watcher: Watcher;
+};
 
 // cross-platform basename (handles / and \)
 function basename(p?: string) {
@@ -38,9 +46,11 @@ const tabStyle = (active: boolean): React.CSSProperties => ({
     : "0 0 0 1px rgba(0,0,0,0.9) inset, 0 1px 2px rgba(0,0,0,0.7)",
 });
 
-export default function AdvancedSettingsMenu() {
+export default function AdvancedSettingsMenu({ watcher }: Props) {
   const [tab, setTab] = React.useState<Tab>("paths");
-  const { lastEvent } = useVaultWatcher();
+
+  // 🔸 Single shared watcher instance for the entire Options screen
+  const { lastEvent } = watcher;
 
   return (
     // Parent card from App.tsx already provides the brass panel;
@@ -158,7 +168,8 @@ export default function AdvancedSettingsMenu() {
             </div>
           </>
         ) : (
-          <WatcherActivity />
+          // 🔸 Pass shared watcher down so WatcherActivity uses the same events
+          <WatcherActivity watcher={watcher} />
         )}
       </div>
     </div>
