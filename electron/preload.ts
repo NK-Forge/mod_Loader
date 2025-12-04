@@ -186,6 +186,6 @@ contextBridge.exposeInMainWorld("api", {
 
 // Handy debug in DevTools:
 console.log(
-  "[PRELOAD] window.api exposed:",
+  "[PRELOAD] Context bridge setup complete.",
   Object.keys((globalThis as any).window?.api || {})
 );

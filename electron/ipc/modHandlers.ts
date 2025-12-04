@@ -8,7 +8,10 @@ import { ipcMain } from "electron";
 import { getConfig } from "../config/configManager";
 import { listMods, reconcileMods, deleteMod } from "../../src/main/mods/fsMods";
 
+let handlersRegistered = false;
+
 export function registerModHandlers(): void {
+  if (handlersRegistered) return;
   // --- Mods: list ---
   ipcMain.handle("mods:list", async () => {
     try {
@@ -54,4 +57,5 @@ export function registerModHandlers(): void {
       return { ok: false, message: e?.message ?? "Failed to delete mod." };
     }
   });
+  handlersRegistered = true;
 }

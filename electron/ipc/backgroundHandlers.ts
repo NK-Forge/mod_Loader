@@ -14,9 +14,14 @@ import {
   toFileUrl,
 } from "../utils/backgroundUtils";
 
+let cachedMainWindow: BrowserWindow | null = null;
+let handlersRegistered = false;
+
 export function registerBackgroundHandlers(
   mainWindow: BrowserWindow | null
 ): void {
+  if (mainWindow) cachedMainWindow = mainWindow;
+  if (handlersRegistered) return;
   ipcMain.handle("bg:get", async () => {
     const config = getConfig();
     const p = config.backgroundImagePath || "";
@@ -59,4 +64,5 @@ export function registerBackgroundHandlers(
     replaceConfig({ backgroundImagePath: "" }, mainWindow);
     return { ok: true };
   });
+  handlersRegistered = true;
 }

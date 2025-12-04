@@ -8,7 +8,12 @@ import { ipcMain, BrowserWindow } from "electron";
 import { replaceConfig } from "../config/configManager";
 import type { AppConfig } from "../config/configManager";
 
+let cachedMainWindow: BrowserWindow | null = null;
+let handlersRegistered = false;
+
 export function registerSetupHandlers(mainWindow: BrowserWindow | null): void {
+  if (mainWindow) cachedMainWindow = mainWindow;
+  if (handlersRegistered) return;
   ipcMain.handle(
     "setup:complete",
     async (_event, configUpdate: Partial<AppConfig>) => {
@@ -29,4 +34,5 @@ export function registerSetupHandlers(mainWindow: BrowserWindow | null): void {
       }
     }
   );
+  handlersRegistered = true;
 }

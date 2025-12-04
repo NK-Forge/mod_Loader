@@ -14,7 +14,10 @@ import {
 import { dirIsEmpty } from "../utils/fileSystemUtils";
 import { waitForGameProcessToExit } from "../gameMonitor";
 
+let handlersRegistered = false;
+
 export function registerLaunchHandlers(): void {
+  if (handlersRegistered) return;
   // Unified launch handler
   ipcMain.handle("play:launch", async () => {
     console.log("=== [play:launch] invoked ===");
@@ -156,4 +159,5 @@ export function registerLaunchHandlers(): void {
       return { ok: false, message: e?.message || "Launch (Mod Play) failed" };
     }
   });
+  handlersRegistered = true;
 }

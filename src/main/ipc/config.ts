@@ -35,37 +35,37 @@ async function writeJSON<T>(file: string, data: T): Promise<void> {
 }
 
 // Expose config get/set over IPC (idempotent)
-safeHandle("config:get", async () => {
-  return getConfig();
-});
+// safeHandle("config:get", async () => {
+//   return getConfig();
+// });
 
-safeHandle<AppConfig>("config:set", async (_evt, next) => {
-  await writeJSON(CONFIG_PATH, next);
-  replaceConfig(next);
-  return true;
-});
+// safeHandle<AppConfig>("config:set", async (_evt, next) => {
+//   await writeJSON(CONFIG_PATH, next);
+//   replaceConfig(next);
+//   return true;
+// });
 
-// Called by Setup Wizard to finish configuration
-safeHandle<Partial<AppConfig>>("config:completeSetup", async (_evt, patch) => {
-  const cur = await readJSON<AppConfig>(CONFIG_PATH, {});
-  const next: AppConfig = {
-    ...cur,
-    ...patch,
-    setupComplete: true,
-    autoDetected: !!patch.autoDetected || cur.autoDetected,
-  };
+// // Called by Setup Wizard to finish configuration
+// safeHandle<Partial<AppConfig>>("config:completeSetup", async (_evt, patch) => {
+//   const cur = await readJSON<AppConfig>(CONFIG_PATH, {});
+//   const next: AppConfig = {
+//     ...cur,
+//     ...patch,
+//     setupComplete: true,
+//     autoDetected: !!patch.autoDetected || cur.autoDetected,
+//   };
 
-  // ensure expected directories exist
-  await Promise.all([
-    ensureDir(next.activeModsPath),
-    ensureDir(next.modsVaultPath),
-    ensureDir(next.modPlayVaultPath),
-    ensureDir(next.saveDataPath),
-  ]);
+//   // ensure expected directories exist
+//   await Promise.all([
+//     ensureDir(next.activeModsPath),
+//     ensureDir(next.modsVaultPath),
+//     ensureDir(next.modPlayVaultPath),
+//     ensureDir(next.saveDataPath),
+//   ]);
 
-  await writeJSON(CONFIG_PATH, next);
-  replaceConfig(next);
-  return next;
-});
+//   await writeJSON(CONFIG_PATH, next);
+//   replaceConfig(next);
+//   return next;
+// });
 
 export { CONFIG_PATH, APP_DIR, readJSON, writeJSON, ensureDir };

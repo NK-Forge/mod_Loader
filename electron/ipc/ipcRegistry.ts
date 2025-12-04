@@ -12,9 +12,13 @@ import { registerBackgroundHandlers } from "./backgroundHandlers";
 import { registerSetupHandlers } from "./setupHandlers";
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
+  console.log('[IPC] Registering all handlers...');
+  
   registerConfigHandlers(mainWindow);
   registerModHandlers();
   registerLaunchHandlers();
   registerBackgroundHandlers(mainWindow);
   registerSetupHandlers(mainWindow);
+  
+  console.log('[IPC] All handlers registered');
 }

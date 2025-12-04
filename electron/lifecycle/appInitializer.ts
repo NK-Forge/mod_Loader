@@ -12,7 +12,7 @@ import {
   getMainWindow,
   waitForWindowReady,
 } from "./windowManager";
-import { registerVaultWatcherIPC } from "../ipc/vaultWatcher";
+// import { registerVaultWatcherIPC } from "../ipc/vaultWatcher";
 import { watchRegistry } from "../watchRegistry";
 
 export async function initializeApp(): Promise<void> {
@@ -34,7 +34,7 @@ export async function initializeApp(): Promise<void> {
     await waitForWindowReady(mainWindow);
 
     // Attach this window to the watcher registry / vault IPC
-    registerVaultWatcherIPC(mainWindow);
+    // registerVaultWatcherIPC(mainWindow);
 
     // Initial watcher paths – **vaults**, not active mods
     try {
