@@ -57,13 +57,15 @@ test-output/
 *.bak
 *.orig
 
-# User data (runtime app folders)
+# User data
 userData/
 logs/
 cache/
 tmp/
 scripts/
 *.txt
+.riven_bundles/
+main_original.ts
 
 # Electron builder outputs
 /dist_electron/
