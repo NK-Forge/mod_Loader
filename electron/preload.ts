@@ -73,13 +73,11 @@ async function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
 }
 
 contextBridge.exposeInMainWorld("api", {
-
-
   getConfig(): Promise<AppConfig> {
     return invoke<AppConfig>(CH.CONFIG_GET);
   },
 
-  setConfig(next: Partial<AppConfig>): Promise<{ ok: boolean, message?: string }> {
+  setConfig(next: Partial<AppConfig>): Promise<{ ok: boolean; message?: string }> {
     return invoke(CH.CONFIG_SET, next);
   },
 
@@ -95,14 +93,13 @@ contextBridge.exposeInMainWorld("api", {
   testWrite: (path: string) => invoke("fs:testWrite", path),
   ensureDirs: (paths: string[]) => invoke("fs:ensureDirs", paths),
   completeSetup: (config: Partial<AppConfig>) => invoke("setup:complete", config),
-  
+
   // ----- Window controls -----
   windowMinimize: () => ipcRenderer.invoke("window:minimize"),
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
   isWindowMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window:isMaximized"),
-
 
   // ----- Background (Phase 4A.2) -----
   bgGet: () => invoke(CH.BG_GET),
@@ -160,6 +157,7 @@ contextBridge.exposeInMainWorld("api", {
     };
   },
 
+  // ----- Watchers -----
   watchersSetPaths: (paths: { mods?: string; modPlay?: string; backup?: string }) =>
     ipcRenderer.invoke("watchers:setPaths", paths),
 
@@ -173,6 +171,27 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("watchers:event", listener);
     return () => {
       ipcRenderer.removeListener("watchers:event", listener);
+    };
+  },
+
+  // ----- Launch status events (for status bar) -----
+  onLaunchStatus: (cb: (payload: { phase: string; mode: string; message: string; timestamp: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
+      cb(payload);
+    };
+    ipcRenderer.on("launch:status", listener);
+    return () => {
+      ipcRenderer.removeListener("launch:status", listener);
+    };
+  },
+
+  onLaunchComplete: (cb: (payload: { ok: boolean; mode: string; message?: string; timestamp: number; durationMs?: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
+      cb(payload);
+    };
+    ipcRenderer.on("launch:complete", listener);
+    return () => {
+      ipcRenderer.removeListener("launch:complete", listener);
     };
   },
 

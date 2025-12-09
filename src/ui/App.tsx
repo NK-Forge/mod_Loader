@@ -101,6 +101,70 @@ export default function App() {
   }
   // ---------- End Status Bar ----------
 
+  // ---------- Hook launch status events into the existing status bar ----------
+  useEffect(() => {
+    if (!api?.onLaunchStatus || !api?.onLaunchComplete) {
+      // older preload/main builds just won't send these; status bar still works
+      return;
+    }
+
+    const offStatus = api.onLaunchStatus(
+      (payload: {
+        phase: string;
+        mode: string;
+        message: string;
+        timestamp: number;
+      }) => {
+        // Treat all live phases as info
+        setStatus({
+          kind: "info",
+          message: payload.message,
+        });
+      }
+    );
+
+    const offComplete = api.onLaunchComplete(
+      (payload: {
+        ok: boolean;
+        mode: string;
+        message?: string;
+        timestamp: number;
+        durationMs?: number;
+      }) => {
+        const baseMessage =
+          payload.message ??
+          (payload.ok
+            ? "Game session complete."
+            : "Game session ended with an error.");
+
+        setStatus({
+          kind: payload.ok ? "success" : "error",
+          message: baseMessage,
+        });
+
+        // Let the completion linger, then return to idle if nothing else overwrote it
+        window.setTimeout(() => {
+          setStatus((prev) =>
+            prev.message === baseMessage &&
+            (prev.kind === "success" || prev.kind === "error")
+              ? { kind: "idle", message: "" }
+              : prev
+          );
+        }, 8000);
+      }
+    );
+
+    return () => {
+      try {
+        offStatus && offStatus();
+        offComplete && offComplete();
+      } catch {
+        // ignore cleanup errors
+      }
+    };
+  }, [api]);
+  // ---------- End launch status integration ----------
+
   // ---------- Background handling ----------
   const [bgUrl, setBgUrl] = useState<string>(defaultBg);
   const refreshBg = async () => {
