@@ -112,8 +112,19 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        const detected = await window.api.detectPaths?.();
+        const res = await window.api.detectPaths?.();
         const cfg = await window.api.getConfig();
+
+        // Support both shapes just in case:
+        // - old:  { gameRoot, gameExe, ... }
+        // - new:  { ok, detected: { gameRoot, gameExe, ... } }
+        let detected: any = res;
+        if (detected && typeof detected.ok === "boolean") {
+          if (!detected.ok) {
+            throw new Error(detected.message || "Path detection failed");
+          }
+          detected = detected.detected;
+        }
 
         setPaths({
           gameRoot: detected?.gameRoot || "",
@@ -133,6 +144,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       }
     })();
   }, []);
+
 
   useEffect(() => {
     const ok = Boolean(
@@ -239,14 +251,6 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
           />
 
           <Field
-            label="Game EXE"
-            value={paths.gameExe}
-            onPick={() => pick("gameExe")}
-            onChange={(v) => setPaths((s) => ({ ...s, gameExe: v }))}
-            hint="Example: C:\\Steam\\steamapps\\common\\Space Marine 2\\Warhammer 40000 Space Marine 2.exe"
-          />
-
-          <Field
             label="Active Mods Path"
             value={paths.activeModsPath}
             onPick={() => pick("activeModsPath")}
@@ -281,10 +285,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             style={{
               marginTop: 20,
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "right",
             }}
           >
-            <Button onClick={testAll}>Test Write Access</Button>
 
             <Button onClick={finish} disabled={!ready}>
               Finish Setup

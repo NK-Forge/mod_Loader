@@ -10,15 +10,21 @@ import { registerModHandlers } from "./modHandlers";
 import { registerLaunchHandlers } from "./launchHandlers";
 import { registerBackgroundHandlers } from "./backgroundHandlers";
 import { registerSetupHandlers } from "./setupHandlers";
+import { registerVaultWatcherIPC } from "./vaultWatcher";
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
-  console.log('[IPC] Registering all handlers...');
-  
+  console.log("[IPC] Registering all handlers (mainWindow =", mainWindow ? mainWindow.id : "null", ")");
+
+  // Config and core app IPC
   registerConfigHandlers(mainWindow);
   registerModHandlers();
   registerLaunchHandlers();
   registerBackgroundHandlers(mainWindow);
   registerSetupHandlers(mainWindow);
-  
-  console.log('[IPC] All handlers registered');
+
+  // Watchers: always call this. First call (null) sets up IPC handlers;
+  // second call (with window) attaches the registry to that window.
+  registerVaultWatcherIPC(mainWindow);
+
+  console.log("[IPC] All handlers registered");
 }

@@ -7,12 +7,15 @@
 import fs from "fs";
 import path from "path";
 import { getConfig } from "./configManager";
+import { Platform } from "../config/configManager";
+import { inferPlatformFromPath } from "../utils/platform";
 
 interface DetectedPaths {
   gameRoot: string;
   gameExe: string;
   activeModsPath: string;
   saveDataPath: string;
+  platform?: Platform;
 }
 
 export async function detectPaths(): Promise<DetectedPaths> {
@@ -22,6 +25,7 @@ export async function detectPaths(): Promise<DetectedPaths> {
     gameExe: "",
     activeModsPath: "",
     saveDataPath: "",
+    platform: "unknown",
   };
 
   // 1) Prefer any existing config values that are valid
@@ -83,8 +87,14 @@ export async function detectPaths(): Promise<DetectedPaths> {
     result.saveDataPath = await detectSaveDataPath();
   }
 
+  // 6) 🔹 Infer platform from gameRoot or activeModsPath
+  result.platform = inferPlatformFromPath(
+    result.gameRoot || result.activeModsPath
+  );
+
   return result;
 }
+
 
 async function detectSaveDataPath(): Promise<string> {
   const userRoot = process.env.USERPROFILE || process.env.HOME;

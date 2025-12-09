@@ -9,14 +9,16 @@ import { initializeApp, setupAppLifecycle } from "./lifecycle/appInitializer";
 import { registerAllIpcHandlers } from "./ipc/ipcRegistry";
 import { getMainWindow } from "./lifecycle/windowManager";
 import { loadConfigFromDisk } from "./config/configManager";
-import { watchRegistry } from "./watchRegistry";
 
-// Import side-effect modules
+// Import side-effect modules (legacy paths IPC)
 import "../src/main/ipc/paths";
 
-// Register window control handlers EARLY (before window exists)
+/**
+ * Register window control handlers EARLY (before window exists).
+ * These are used by the preload bridge for the custom titlebar.
+ */
 function registerWindowControlHandlers() {
-  console.log('[WINDOW] Registering window control handlers');
+  console.log("[WINDOW] Registering window control handlers");
   
   ipcMain.handle("window:minimize", async () => {
     const win = getMainWindow();
@@ -44,61 +46,35 @@ function registerWindowControlHandlers() {
     return win ? win.isMaximized() : false;
   });
   
-  console.log('[WINDOW] Window control handlers registered');
-}
-
-// Register watcher handlers EARLY (before window exists)
-function registerWatcherHandlersEarly() {
-  console.log('[WATCHERS] Registering watcher handlers (early)');
-  
-  ipcMain.handle("watchers:setPaths", (_e, paths) => {
-    watchRegistry.setPaths(paths);
-    return { ok: true };
-  });
-
-  ipcMain.handle("watchers:enable", (_e, domain) => {
-    return watchRegistry.enable(domain).then(() => ({ ok: true }));
-  });
-
-  ipcMain.handle("watchers:disable", (_e, domain) => {
-    return watchRegistry.disable(domain).then(() => ({ ok: true }));
-  });
-
-  ipcMain.handle("watchers:refreshAll", async () => {
-    watchRegistry.setPaths({ ...{} });
-    return { ok: true };
-  });
-  
-  console.log('[WATCHERS] Watcher handlers registered');
+  console.log("[WINDOW] Window control handlers registered");
 }
 
 app.whenReady().then(async () => {
-  console.log('[MAIN] App ready, starting initialization...');
+  console.log("[MAIN] App ready, starting initialization...");
   
-  // Step 1: Load config from disk
+  // Step 1: Load config from disk into memory
   loadConfigFromDisk();
-  console.log('[MAIN] Config loaded');
+  console.log("[MAIN] Config loaded");
   
-  // Step 2: Register ALL handlers BEFORE window creation
+  // Step 2: Register window + core IPC BEFORE window creation.
+  // This ensures channels like config:get and watchers:setPaths exist
+  // by the time the renderer + preload boot.
   registerWindowControlHandlers();
-  registerWatcherHandlersEarly();
-  registerAllIpcHandlers(null);
-  console.log('[MAIN] All handlers registered');
+  registerAllIpcHandlers(null); // <-- first pass, IPC only
+  console.log("[MAIN] Core IPC handlers registered (no window)");
   
   // Step 3: Create window (preload loads, handlers already exist)
   await initializeApp();
-  console.log('[MAIN] Window created');
+  console.log("[MAIN] Window created");
   
   // Step 4: Update handlers with window reference and attach watchers
   const mainWindow = getMainWindow();
-  if (mainWindow) {
-    registerAllIpcHandlers(mainWindow);
-    
-    // Attach window to watch registry for event broadcasting
-    watchRegistry.attach(mainWindow);
-    
-    console.log('[MAIN] Handlers updated with window reference');
+  if (!mainWindow) {
+    console.error("[MAIN] No main window after initializeApp");
+    return;
   }
+  registerAllIpcHandlers(mainWindow);
+  console.log('[MAIN] IPC handlers registered');
 });
 
 setupAppLifecycle();

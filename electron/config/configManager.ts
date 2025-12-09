@@ -10,6 +10,7 @@ import fs from "fs";
 import { patchConfig as syncConfigStore } from "../../src/main/state/configStore";
 
 export type InstallStrategy = "hardlink" | "symlink" | "copy";
+export type Platform = "steam" | "epic" | "unknown";
 
 export interface AppConfig {
   setupComplete: boolean;
@@ -21,6 +22,7 @@ export interface AppConfig {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
+  platform: Platform;
   backgroundImagePath?: string;
 }
 
@@ -36,6 +38,7 @@ let config: AppConfig = {
   modPlayVaultPath: path.join(app.getPath("userData"), "mod_play_vault"),
   saveDataPath: "",
   installStrategy: "hardlink",
+  platform: "steam",
   backgroundImagePath: "",
 };
 

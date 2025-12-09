@@ -18,6 +18,7 @@ import {
 } from "./theme";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
+type Platform = "steam" | "epic" | "unknown";
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -28,6 +29,7 @@ type AppConfig = {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
+  platform: Platform;
   backgroundImagePath?: string;
 };
 
@@ -46,6 +48,7 @@ export default function App() {
     modPlayVaultPath: "",
     saveDataPath: "",
     installStrategy: "hardlink",
+    platform: "steam",
   });
   const watcher = useVaultWatcher();
   const { setPaths: setWatcherPaths, enable: enableWatcher } = watcher;

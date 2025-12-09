@@ -37,5 +37,5 @@ export async function mirrorSavesIntoVault(): Promise<void> {
   console.log("  vault:", config.modPlayVaultPath);
 
   await replaceDirContents(config.saveDataPath, config.modPlayVaultPath);
-  console.log("[SaveData] mirrored game saves → vault");
+  console.log("[SaveData] mirrored game saves -> vault");
 }

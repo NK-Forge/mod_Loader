@@ -37,7 +37,7 @@ type ImmutablePaths = {
 const CH = {
   // config
   CONFIG_GET: "config:get",
-  CONFIG_SET: "config:set",
+  CONFIG_SET: "config:update",
   EVT_CONFIG_CHANGED: "config:changed",
 
   // mods
@@ -79,7 +79,7 @@ contextBridge.exposeInMainWorld("api", {
     return invoke<AppConfig>(CH.CONFIG_GET);
   },
 
-  setConfig(next: Partial<AppConfig>): Promise<{ ok: boolean }> {
+  setConfig(next: Partial<AppConfig>): Promise<{ ok: boolean, message?: string }> {
     return invoke(CH.CONFIG_SET, next);
   },
 

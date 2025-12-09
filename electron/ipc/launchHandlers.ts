@@ -18,7 +18,8 @@ let handlersRegistered = false;
 
 export function registerLaunchHandlers(): void {
   if (handlersRegistered) return;
-  // Unified launch handler
+
+  // Unified launch handler (auto decides mod vs vanilla based on activeModsPath)
   ipcMain.handle("play:launch", async () => {
     console.log("=== [play:launch] invoked ===");
     const config = getConfig();
@@ -41,43 +42,40 @@ export function registerLaunchHandlers(): void {
     }
 
     const result = launchGameExe();
-    if (!result.ok || !result.child) {
+    if (!result.ok) {
       showLaunchError(result.message || "Could not start game.");
       return { ok: false, message: result.message || "Launch error" };
     }
 
-    // The spawned child is usually the Steam bootstrapper; it exits early.
-    // We wait for it to close, THEN monitor the real game process.
-    return await new Promise((resolve) => {
-      result.child!.on("close", async (code: number) => {
-        console.log("[play:launch] launcher process closed with code", code);
+    if (!isModPlay) {
+      // Vanilla: no monitoring/mirroring required
+      console.log("[play:launch] Launched vanilla play (no monitoring).");
+      return { ok: true, mode: "vanilla", exitCode: 0 };
+    }
 
-        if (isModPlay) {
-          try {
-            console.log(
-              "[play:launch] Monitoring real game process for exit..."
-            );
-            await waitForGameProcessToExit("[play:launch]");
-            console.log(
-              "[play:launch] Real game exited, mirroring FROM game saves INTO vault"
-            );
-            await mirrorSavesIntoVault();
-          } catch (err) {
-            console.error("[play:launch] Auto-mirror failed:", err);
-          }
-        } else {
-          console.log(
-            "[play:launch] Skipping post-exit mirror (vanilla or no active mods)"
-          );
-        }
+    // Mod Play: monitor real game process until exit, then mirror back
+    try {
+      console.log("[play:launch] Monitoring real game process for exit...");
+      await waitForGameProcessToExit("[play:launch]");
+      console.log(
+        "[play:launch] Real game exited, mirroring FROM game saves INTO vault"
+      );
+      await mirrorSavesIntoVault();
+      console.log("[play:launch] Auto-mirror completed.");
+    } catch (err) {
+      console.error("[play:launch] Auto-mirror failed:", err);
+      return {
+        ok: false,
+        mode: "mod",
+        message: (err as any)?.message || "Auto-mirror failed",
+      };
+    }
 
-        resolve({
-          ok: true,
-          mode: isModPlay ? "mod" : "vanilla",
-          exitCode: code ?? 0,
-        });
-      });
-    });
+    return {
+      ok: true,
+      mode: "mod",
+      exitCode: 0,
+    };
   });
 
   // Manual save: copy game config → mod_play_vault (overwrites)
@@ -90,20 +88,21 @@ export function registerLaunchHandlers(): void {
     }
   });
 
-  // Launch (Vanilla): no mirrors, just spawn
+  // Launch (Vanilla): no mirrors, no monitoring; just launch
   ipcMain.handle("launchVanillaPlay", async () => {
+    console.log("=== [launchVanillaPlay] invoked ===");
     const result = launchGameExe();
-    if (!result.ok || !result.child) {
+    if (!result.ok) {
+      console.log("[launchVanillaPlay] launch failed:", result.message);
       return {
         ok: false,
         message: result.message || "Could not launch (Vanilla)",
       };
     }
-    return await new Promise((resolve) => {
-      result.child!.on("close", (code: number) => {
-        resolve({ ok: true, mode: "vanilla", exitCode: code ?? 0 });
-      });
-    });
+
+    console.log("[launchVanillaPlay] Launched vanilla play via URI.");
+    // We don't monitor or mirror in vanilla mode
+    return { ok: true, mode: "vanilla", exitCode: 0 };
   });
 
   // Launch (Mod Play): pre-mirror (vault→config if vault has data), then post-mirror (config→vault)
@@ -120,44 +119,35 @@ export function registerLaunchHandlers(): void {
       await mirrorVaultIntoGameSavesIfPresent();
 
       const result = launchGameExe();
-      if (!result.ok || !result.child) {
-        console.log("[launchModPlay] spawn failed:", result.message);
+      if (!result.ok) {
+        console.log("[launchModPlay] launch failed:", result.message);
         return {
           ok: false,
           message: result.message || "Could not launch (Mod Play)",
         };
       }
 
-      // Wait for the Steam launcher/bootstrapper to exit,
-      // then monitor the real game process until it fully closes.
-      return await new Promise((resolve) => {
-        result.child!.on("close", async (code: number) => {
-          console.log(
-            "[launchModPlay] launcher process closed with code",
-            code
-          );
+      // 🔹 New flow: no child, no 30s delay, no stub.
+      // We directly monitor the real SM2 process by name until it exits.
+      console.log(
+        "[launchModPlay] Monitoring real game process for exit..."
+      );
+      await waitForGameProcessToExit("[launchModPlay]");
+      console.log(
+        "[launchModPlay] Real game exited, mirroring FROM game saves INTO vault"
+      );
+      await mirrorSavesIntoVault();
+      console.log("[launchModPlay] Auto-mirror completed.");
 
-          try {
-            console.log(
-              "[launchModPlay] Monitoring real game process for exit..."
-            );
-            await waitForGameProcessToExit("[launchModPlay]");
-            console.log(
-              "[launchModPlay] Real game exited, mirroring FROM game saves INTO vault"
-            );
-            await mirrorSavesIntoVault();
-            console.log("[launchModPlay] Auto-mirror completed.");
-          } catch (err) {
-            console.error("[launchModPlay] Auto-mirror failed:", err);
-          }
-
-          resolve({ ok: true, mode: "mod", exitCode: code ?? 0 });
-        });
-      });
+      return { ok: true, mode: "mod", exitCode: 0 };
     } catch (e: any) {
       console.error("[launchModPlay] exception:", e);
-      return { ok: false, message: e?.message || "Launch (Mod Play) failed" };
+      return {
+        ok: false,
+        message: e?.message || "Launch (Mod Play) failed",
+      };
     }
   });
+
   handlersRegistered = true;
 }

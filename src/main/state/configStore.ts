@@ -2,6 +2,7 @@
 import { EventEmitter } from "node:events";
 
 export type InstallStrategy = "auto" | "hardlink" | "symlink" | "copy";
+export type Platform = "steam" | "epic" | "unknown";
 
 export type AppConfig = {
   setupComplete?: boolean;
@@ -17,6 +18,7 @@ export type AppConfig = {
   saveDataPath?: string;
 
   installStrategy?: InstallStrategy;
+  platform?: Platform;
 
   lastRunUsedMods?: boolean;
   lastRunClosedAt?: string;

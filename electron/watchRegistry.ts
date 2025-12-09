@@ -30,17 +30,22 @@ class WatchRegistry {
   private flushTimer: NodeJS.Timeout | null = null;
 
   attach(win: BrowserWindow) {
+    console.log("[watchRegistry] attach called for window id", win.id);
     this.windows.add(win);
     win.on("closed", () => this.windows.delete(win));
   }
+
 
   setPaths(next: VaultPaths) {
     const changed =
       next.mods !== this.paths.mods ||
       next.modPlay !== this.paths.modPlay ||
       next.backup !== this.paths.backup;
+    console.log("[watchRegistry] setPaths called with:", next, "changed =", changed); 
     this.paths = { ...this.paths, ...next };
-    if (changed) this.rebuild();
+    if (changed)
+      console.log("[watchRegistry] paths changed, calling rebuild()");
+      this.rebuild();
   }
 
   async enable(domain: Domain) {
@@ -59,6 +64,12 @@ class WatchRegistry {
   async disposeAll() {
     await Promise.all(Object.values(this.watchers).map(w => w?.close().catch(() => {})));
     this.watchers = {};
+  }
+
+    async refreshAll() {
+    // Force a full rebuild of all domains (mods, modPlay, backup)
+    await this.rebuild();
+    console.log("[watchRegistry] rebuild() starting with paths:", this.paths);
   }
 
   private queueEvent(evt: WatchEvent) {
@@ -94,8 +105,10 @@ class WatchRegistry {
 
 
   private async rebuild() {
+    console.log("[watchRegistry] rebuild() starting with paths:", this.paths);
     await this.disposeAll();
     await Promise.all(["mods", "modPlay", "backup"].map(d => this.buildOne(d as Domain)));
+    console.log("[watchRegistry] rebuild() done, sending refresh events");
     // Tell UI to do a lightweight refresh after rebuild
     this.broadcast({ domain: "mods", type: "refresh", file: "", at: Date.now() });
     this.broadcast({ domain: "modPlay", type: "refresh", file: "", at: Date.now() });
@@ -158,6 +171,7 @@ class WatchRegistry {
   }
 
   private broadcast(evt: WatchEvent) {
+    console.log("[watchRegistry] broadcast", evt, "to", this.windows.size, "window(s)");
     for (const win of this.windows) {
       if (!win.isDestroyed()) {
         win.webContents.send("watchers:event", evt);
