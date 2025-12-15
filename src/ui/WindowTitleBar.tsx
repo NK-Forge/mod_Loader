@@ -41,7 +41,7 @@ export function WindowTitleBar() {
           pointerEvents: "none", // title must not block dragging
         }}
       >
-        WH40K: Space Marine 2 Mod Manager
+        NK-Forge SM2 Mod Manager
       </div>
 
       {/* Right-side window controls */}

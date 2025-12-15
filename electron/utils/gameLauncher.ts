@@ -43,7 +43,7 @@ export function launchGameExe(): LaunchResult {
     // default: Steam
     return launchViaSteam();
   } catch (err: any) {
-    console.error("[GameLauncher] ❌ Launch threw unexpected error:", err);
+    console.error("[GameLauncher] Launch threw unexpected error:", err);
     return {
       ok: false,
       message: err?.message || "Unknown launch error",
@@ -61,13 +61,13 @@ function launchViaSteam(): LaunchResult {
     (config?.steamAppId && String(config.steamAppId)) || DEFAULT_STEAM_APP_ID;
 
   const steamUri = `steam://run/${steamAppId}`;
-  console.log("[GameLauncher] 🚀 Launching via Steam URI:", steamUri);
+  console.log("[GameLauncher] Launching via Steam URI:", steamUri);
 
   try {
     shell.openExternal(steamUri);
     return { ok: true };
   } catch (err: any) {
-    console.error("[GameLauncher] ❌ Steam Launch Error:", err);
+    console.error("[GameLauncher] Steam Launch Error:", err);
     return {
       ok: false,
       message: err?.message || "Steam launch failed",
@@ -85,20 +85,20 @@ function launchViaEpic(): LaunchResult {
   const uri = getEpicLaunchUriForGameByPathFragment(EPIC_PATH_FRAGMENT);
 
   if (!uri) {
-    console.error("[GameLauncher] ❌ Could not determine Epic launch URI.");
+    console.error("[GameLauncher] Could not determine Epic launch URI.");
     return {
       ok: false,
       message: "Could not determine Epic launch URI for Space Marine 2.",
     };
   }
 
-  console.log("[GameLauncher] 🚀 Launching via Epic URI:", uri);
+  console.log("[GameLauncher] Launching via Epic URI:", uri);
 
   try {
     shell.openExternal(uri);
     return { ok: true };
   } catch (err: any) {
-    console.error("[GameLauncher] ❌ Epic Launch Error:", err);
+    console.error("[GameLauncher] Epic Launch Error:", err);
     return {
       ok: false,
       message: err?.message || "Epic launch failed",

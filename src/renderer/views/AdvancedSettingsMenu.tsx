@@ -65,7 +65,8 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
           marginBottom: 12,
         }}
       >
-        <div style={{ fontSize: 16, fontWeight: 600 }}>Options</div>
+      {/* DEV-ONLY WATCHER STATUS */}
+      {import.meta.env.DEV && (
         <div
           style={{ marginLeft: "auto", fontSize: 12, color: subtextColor }}
           aria-live="polite"
@@ -90,6 +91,7 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
               }`
             : "watching mods/ & mod_play_vault/…"}
         </div>
+      )}
       </div>
 
       {/* Tabs */}
@@ -137,35 +139,7 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
           <>
             <ManagedPaths />
 
-            {/* Background Picker section */}
-            <div
-              style={{
-                marginTop: 16,
-                paddingTop: 12,
-                borderTop: panelBorder,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  marginBottom: 6,
-                }}
-              >
-                Main Background
-              </div>
-              <BackgroundPicker />
-              <div
-                style={{
-                  fontSize: 12,
-                  color: subtextColor,
-                  marginTop: 6,
-                }}
-              >
-                Accepted: .jpg, .jpeg, .png, .webp. Large images will be scaled
-                to fit. Reset reverts to the default Space Marine themed image.
-              </div>
-            </div>
+
           </>
         ) : (
           // 🔸 Pass shared watcher down so WatcherActivity uses the same events

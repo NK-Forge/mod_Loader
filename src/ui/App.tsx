@@ -10,6 +10,7 @@ import defaultBg from "../renderer/assets/default_bg.jpg";
 import { OperationStatusBar, OperationStatus } from "./OperationStatusBar";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { useVaultWatcher } from "../renderer/hooks/useVaultWatcher";
+import { BrassButton } from "./BrassButton";
 import { 
   brassCard,
   brassButton,
@@ -409,7 +410,8 @@ export default function App() {
 
       setTempStatus({
         kind: "success",
-        message: `Saved ${ev.files ?? 0} files (${mb} MB) into Mod Play Vault.`,
+        // message: `Saved ${ev.files ?? 0} files (${mb} MB) into Mod Play Vault.`,  For formating if wanting to track files/bytes later
+        message: `Saved files into Mod Play Vault.`,
       });
     } catch (e: any) {
       setTempStatus({
@@ -421,7 +423,6 @@ export default function App() {
 
   // ---------- styles ----------
   const card = brassCard;
-  const btn = brassButton;
   const zebra = zebraRow;
   const launchBtnStyle = brassLaunchButton;
 
@@ -480,13 +481,12 @@ export default function App() {
               }}
             >
               <h2 style={{ margin: 0, color: "#fff" }}></h2>
-              <button
-                style={btn}
+              <BrassButton
                 onClick={() => setShowAdvanced(false)}
                 title="Back to main mod manager"
               >
                 ← Back to Mod Manager
-              </button>
+              </BrassButton>
             </div>
 
             {AdvancedSettingsMenu ? (
@@ -522,8 +522,7 @@ export default function App() {
             }}
           >
             {/* Left: Open Mods Folder */}
-            <button
-              style={btn}
+            <BrassButton
               onClick={openActiveModsFolder}
               disabled={!cfg.activeModsPath}
               title={
@@ -533,7 +532,7 @@ export default function App() {
               }
             >
               Open Mods Folder
-            </button>
+            </BrassButton>
 
             {/* Right: other controls */}
             <div
@@ -543,19 +542,18 @@ export default function App() {
                 gap: 8,
               }}
             >
-              <button
-                style={btn}
+              <BrassButton
                 onClick={manualGameDataSave}
                 title="Copy platform config/save into mod_play_vault now"
               >
                 Manual game data save
-              </button>
-              <button style={btn} onClick={refreshMods} title="Re-scan">
+              </BrassButton>
+              <BrassButton onClick={refreshMods} title="Re-scan">
                 Refresh
-              </button>
-              <button style={btn} onClick={() => setShowAdvanced(true)}>
+              </BrassButton>
+              <BrassButton onClick={() => setShowAdvanced(true)}>
                 Options
-              </button>
+              </BrassButton>
             </div>
           </div>
 
@@ -578,12 +576,12 @@ export default function App() {
               }}
             >
               <div style={{ display: "flex", gap: 8 }}>
-                <button style={btn} onClick={() => markAll(true)}>
+                <BrassButton onClick={() => markAll(true)}>
                   All On
-                </button>
-                <button style={btn} onClick={() => markAll(false)}>
+                </BrassButton>
+                <BrassButton onClick={() => markAll(false)}>
                   All Off
-                </button>
+                </BrassButton>
               </div>
               <div style={{ color: "#bdbdbd", alignSelf: "center" }}>
                 Checked = in game mods; Unchecked + “🗃️ in vault” = installed

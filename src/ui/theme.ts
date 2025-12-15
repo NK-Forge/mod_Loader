@@ -30,6 +30,35 @@ export const brassButton: React.CSSProperties = {
     "transform 120ms ease-out, box-shadow 120ms ease-out, border-color 120ms ease-out, opacity 120ms ease-out",
 };
 
+export const brassButtonBase: React.CSSProperties = {
+  padding: "6px 12px",
+  borderRadius: 999,
+  // 🔽 use explicit border pieces instead of `border`
+  borderWidth: 1,
+  borderStyle: "solid",
+  borderColor: "rgba(255, 215, 128, 0.7)",
+  background: brassGradient,
+  color: "#f7e2b5",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 600,
+  boxShadow:
+    "0 0 0 1px rgba(0,0,0,0.9) inset, 0 2px 4px rgba(0,0,0,0.9), 0 0 6px rgba(255,215,128,0.28)",
+  textShadow: "0 1px 1px #000",
+  transition:
+    "transform 120ms ease-out, box-shadow 120ms ease-out, border-color 120ms ease-out, opacity 120ms ease-out",
+};
+
+export const brassButtonActive: React.CSSProperties = {
+  transform: "translateY(1px)",
+  opacity: 0.85,
+  boxShadow:
+    "0 0 0 1px rgba(0,0,0,0.9) inset, 0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(255,215,128,0.18)",
+  // 🔽 only override the color, consistent with base
+  borderColor: "rgba(255, 215, 128, 0.45)",
+};
+
+
 export const brassLaunchButton = (
   enabled: boolean
 ): React.CSSProperties => ({

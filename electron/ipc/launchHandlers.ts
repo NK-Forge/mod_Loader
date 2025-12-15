@@ -100,7 +100,7 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
 
     await mirrorSavesIntoVault();
 
-    console.log("[play:launch] ✅ Auto-mirror completed successfully");
+    console.log("[play:launch] Auto-mirror completed successfully");
 
     return {
       ok: true as const,
@@ -109,7 +109,7 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
     };
   } catch (err) {
     const errorMsg = (err as Error)?.message || "Unknown error";
-    console.error("[play:launch] ❌ Monitor/mirror pipeline failed:", {
+    console.error("[play:launch] Monitor/mirror pipeline failed:", {
       error: errorMsg,
       stack: (err as Error)?.stack,
     });
@@ -145,12 +145,12 @@ export function registerLaunchHandlers(): void {
   // Back-compat wrappers for api.launchModPlay() / api.launchVanillaPlay()
   // (preload.ts maps CH.LAUNCH_MOD / CH.LAUNCH_VAN to these channels)
   ipcMain.handle("launchModPlay", async () => {
-    console.log("=== [launchModPlay] wrapper → play:launch (mod) ===");
+    console.log("=== [launchModPlay] wrapper -> play:launch (mod) ===");
     return handlePlayLaunch("mod");
   });
 
   ipcMain.handle("launchVanillaPlay", async () => {
-    console.log("=== [launchVanillaPlay] wrapper → play:launch (vanilla) ===");
+    console.log("=== [launchVanillaPlay] wrapper -> play:launch (vanilla) ===");
     return handlePlayLaunch("vanilla");
   });
 
@@ -159,11 +159,11 @@ export function registerLaunchHandlers(): void {
     console.log("[manual-save] Manual save triggered");
     try {
       await mirrorSavesIntoVault();
-      console.log("[manual-save] ✅ Manual save completed");
-      // If you later track stats (files/bytes), return them here.
-      return { ok: true, files: 0, bytes: 0 };
+      console.log("[manual-save] Manual save completed");
+      // If you later track stats (files/bytes), return them here. i.e.: return { ok: true, files: 0, bytes: 0 };
+      return { ok: true };
     } catch (e: any) {
-      console.error("[manual-save] ❌ Failed:", e);
+      console.error("[manual-save] Failed:", e);
       return {
         ok: false,
         error: e?.message || "Manual save failed",
@@ -172,5 +172,5 @@ export function registerLaunchHandlers(): void {
   });
 
   handlersRegistered = true;
-  console.log("[LaunchHandlers] ✅ Handlers registered successfully");
+  console.log("[LaunchHandlers] Handlers registered successfully");
 }

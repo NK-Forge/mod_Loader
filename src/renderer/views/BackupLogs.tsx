@@ -152,7 +152,7 @@ export default function BackupLogs({ theme = "dark" }: { theme?: Theme }) {
                       {r.result}
                     </td>
                     <td style={td}>
-                      <button style={btn} onClick={onRevealDest}>Reveal Dest</button>
+                      <BrassButton onClick={onRevealDest}>Reveal Dest</button>
                     </td>
                   </tr>
                 ))

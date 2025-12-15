@@ -41,7 +41,7 @@ export async function createWindow(): Promise<void> {
 
   if (app.isPackaged) {
     // Production: load built renderer HTML
-    await mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   } else {
     // Development: load Vite dev server
     await mainWindow.loadURL("http://localhost:5173");
