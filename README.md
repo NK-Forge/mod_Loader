@@ -228,8 +228,9 @@ For assistance, include:
 - Description of the issue
 - Logs or screenshots when possible
 
-Support email: dev@nkforge.com
-
+Support:
+    Discord: https://discord.gg/y8G8ptxjGu
+    Email: dev@nkforge.com
 ---
 
 ## Thank You
