@@ -60,7 +60,7 @@ After validation, you will enter the main Mod Manager.
 
 ## Mods Vault
 
-The Mods Vault is where your mod folders are stored.
+The Mods Vault is where your mod files are stored when not in use.
 
 - Extract mods into either the official SM2 mods folder or the Mods Vault.
 - The Mod Loader scans and lists available mods.
@@ -101,12 +101,14 @@ If you want to preserve modded saves before using Manual Save:
 ### Automatic Save Mirroring
 
 After modded play:
+If the Launcher was left open and running in the background
 
 1. The Mod Loader monitors save/config activity.
 2. When the game closes, the loader detects the exit.
 3. It mirrors updated save files back into the Mod Play Vault.
 
 Automatic mirroring does not occur in vanilla mode.
+We leave Vanilla to Steam or Epic Clouds to handle.
 
 ---
 
