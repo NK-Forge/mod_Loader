@@ -1,3 +1,5 @@
+// src/renderer/views/AdvancedSettingsMenu.tsx
+
 import React from "react";
 import ManagedPaths from "./ManagedPaths";
 import BackgroundPicker from "../components/BackgroundPicker";
@@ -49,7 +51,7 @@ const tabStyle = (active: boolean): React.CSSProperties => ({
 export default function AdvancedSettingsMenu({ watcher }: Props) {
   const [tab, setTab] = React.useState<Tab>("paths");
 
-  // 🔸 Single shared watcher instance for the entire Options screen
+  // Single shared watcher instance for the entire Options screen
   const { lastEvent } = watcher;
 
   return (
@@ -142,7 +144,7 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
 
           </>
         ) : (
-          // 🔸 Pass shared watcher down so WatcherActivity uses the same events
+          // Pass shared watcher down so WatcherActivity uses the same events
           <WatcherActivity watcher={watcher} />
         )}
       </div>

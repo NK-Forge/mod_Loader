@@ -1,3 +1,5 @@
+// src/vite-env.d.ts
+
 /// <reference types="vite/client" />
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";

@@ -92,11 +92,6 @@ async function isGameProcessRunning(): Promise<boolean> {
 
 /**
  * Wait for the Space Marine 2 game process to appear and then exit.
- *
- * Phase 1: Wait up to APPEAR_TIMEOUT_MS for the process to show up and be
- *          stably running (RUNNING_STABLE_CHECKS in a row).
- * Phase 2: Once seen "stably running", poll until it's stably not running
- *          (EXIT_STABLE_CHECKS in a row).
  */
 export async function waitForGameProcessToExit(
   logPrefix: string = "[GameMonitor]"
@@ -115,7 +110,6 @@ export async function waitForGameProcessToExit(
   let runningStable = false;
   let runningStreak = 0;
 
-  // ---- Phase 1: Wait for game to appear and be "stably running" ----
   console.log(`${logPrefix} Phase 1: Waiting for game to start...`);
 
   while (Date.now() - startTime < APPEAR_TIMEOUT_MS) {
@@ -145,7 +139,6 @@ export async function waitForGameProcessToExit(
     return;
   }
 
-  // ---- Phase 2: Wait for game to be "stably not running" ----
   console.log(`${logPrefix} Phase 2: Game running, monitoring for exit...`);
 
   let checks = 0;

@@ -5,7 +5,7 @@
  *
  * Supports BOTH folder-per-mod and loose files (except ignored extensions).
  * - listMods(): merges Active + Vault as rows { name, enabled, inVault }
- * - reconcileMods(): moves entries Active↔Vault based on enabled set
+ * - reconcileMods(): moves entries Active<->Vault based on enabled set
  * - deleteMod(): backs up then removes a mod from Active/Vault
  */
 
@@ -134,8 +134,8 @@ export async function reconcileMods(
     }
   }
 
-  // 4) Ensure items that SHOULD be active are there:
-  //    If in Vault and not in Active → move Vault → Active
+  // Ensure items that SHOULD be active are there:
+  // If in Vault and not in Active → move Vault → Active
   for (const name of want) {
     const aPath = path.join(activeDir, name);
     const vPath = path.join(vaultDir,  name);
@@ -149,9 +149,9 @@ export async function reconcileMods(
     }
   }
 
-  // 5) Resolve duplicates consistently:
-  //    - If want Active and both exist → keep Active, remove Vault copy
-  //    - If NOT want Active and both exist → keep Vault, remove Active copy
+  // Resolve duplicates consistently:
+  //  - If want Active and both exist → keep Active, remove Vault copy
+  //  - If NOT want Active and both exist → keep Vault, remove Active copy
   const union = new Set<string>([...presentActive, ...presentVault, ...want]);
   for (const name of union) {
     const aPath = path.join(activeDir, name);

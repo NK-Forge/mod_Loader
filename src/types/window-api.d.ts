@@ -1,9 +1,11 @@
+// src/types/window-api.d.ts
+
 export {};
 
 declare global {
   interface Window {
     api: {
-      // keep your existing methods; we don’t list them, we’re just adding:
+      // keep the existing methods; we don’t list them, we’re just adding:
       revealPath: (p: string) => Promise<void>;
       getImmutablePaths: () => {
         modPlayVault: string;
@@ -15,7 +17,7 @@ declare global {
       listCopyEvents: (
         modPlayVault: string,
         lastDays: number
-      ) => Promise<CopyEvent[]>;
+      ) => Promise<CopyEvent[]>; // Keeping in case we want to show backup logs in the future
     };
   }
 

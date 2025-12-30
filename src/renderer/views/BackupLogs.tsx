@@ -1,6 +1,9 @@
 // src/views/BackupLogs.tsx
+// Keeping in case we want to show backup logs in the future.
+
 import React from "react";
 import { useImmutablePaths } from "../state/config";
+import { BrassButton } from "../../ui/BrassButton";
 
 type Theme = "light" | "dark";
 
@@ -152,7 +155,7 @@ export default function BackupLogs({ theme = "dark" }: { theme?: Theme }) {
                       {r.result}
                     </td>
                     <td style={td}>
-                      <BrassButton onClick={onRevealDest}>Reveal Dest</button>
+                      <BrassButton onClick={onRevealDest}>Reveal Dest</BrassButton>
                     </td>
                   </tr>
                 ))

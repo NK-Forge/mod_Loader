@@ -19,7 +19,7 @@ declare global {
       onConfigChanged?: (cb: ()=>void) => () => void;
       listCopyEvents: (modPlayVault: string, lastDays: number) => Promise<Array<{
         ts: string; src: string; dest: string; files: number; bytes: number; ms: number; result: 'ok'|'error';
-      }>>;
+      }>>; // Keeping in case we want to show backup logs in the future
     };
   }
 }

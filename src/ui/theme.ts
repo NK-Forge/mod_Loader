@@ -33,7 +33,7 @@ export const brassButton: React.CSSProperties = {
 export const brassButtonBase: React.CSSProperties = {
   padding: "6px 12px",
   borderRadius: 999,
-  // 🔽 use explicit border pieces instead of `border`
+  // USse explicit border pieces instead of `border`
   borderWidth: 1,
   borderStyle: "solid",
   borderColor: "rgba(255, 215, 128, 0.7)",
@@ -54,7 +54,7 @@ export const brassButtonActive: React.CSSProperties = {
   opacity: 0.85,
   boxShadow:
     "0 0 0 1px rgba(0,0,0,0.9) inset, 0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(255,215,128,0.18)",
-  // 🔽 only override the color, consistent with base
+  // Only override the color, consistent with base
   borderColor: "rgba(255, 215, 128, 0.45)",
 };
 

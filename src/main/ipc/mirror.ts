@@ -1,7 +1,7 @@
 // src/main/ipc/mirror.ts
 import { safeHandle } from "./safeHandle";
 import { getConfig } from "../state/configStore";
-import { mirrorPlatformConfigToModVault } from "../services/MirrorCopyService"; // adjust path if needed
+import { mirrorPlatformConfigToModVault } from "../services/MirrorCopyService";
 
 safeHandle("mirror:run", async () => {
   const cfg = getConfig();

@@ -4,28 +4,28 @@ import { AppConfig, getConfig } from "../state/configStore";
 
 /**
  * Resolve the game's save/config root directory.
- * Phase 3A: prefer flat key `saveDataPath`.
- * Legacy (Phase 2): fall back to nested `paths.platform_config_root` or `paths.config_root`.
+ * prefer flat key `saveDataPath`.
+ * Legacy: fall back to nested `paths.platform_config_root` or `paths.config_root`.
  */
 export function resolveSaveRoot(cfg: AppConfig): string | undefined {
-  // Flat (Phase 3A)
+  // Flat
   if (cfg.saveDataPath) return cfg.saveDataPath as string;
 
-  // Legacy (Phase 2) – tolerated at runtime; typed via `any` to avoid TS schema errors
+  // Legacy – tolerated at runtime; typed via `any` to avoid TS schema errors
   const legacyPaths = (cfg as any)?.paths;
   return legacyPaths?.platform_config_root ?? legacyPaths?.config_root;
 }
 
 /**
  * Resolve the Mod-Play vault path.
- * Phase 3A: prefer flat key `modPlayVaultPath`.
- * Legacy (Phase 2): fall back to nested `vaults.mod_play_vault`.
+ * prefer flat key `modPlayVaultPath`.
+ * Legacy: fall back to nested `vaults.mod_play_vault`.
  */
 export function resolveModPlayVault(cfg: AppConfig): string | undefined {
-  // Flat (Phase 3A)
+  // Flat
   if (cfg.modPlayVaultPath) return cfg.modPlayVaultPath as string;
 
-  // Legacy (Phase 2)
+  // Legacy
   const legacyVaults = (cfg as any)?.vaults;
   return legacyVaults?.mod_play_vault;
 }

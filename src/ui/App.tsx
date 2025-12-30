@@ -373,7 +373,7 @@ export default function App() {
         // preferred: dedicated helper from preload
         api.revealPath(cfg.activeModsPath);
       } else if (api.invoke) {
-        // fallback if you only have a generic invoke bridge
+        // fallback generic invoke bridge
         api.invoke("paths:reveal", cfg.activeModsPath);
       }
     } catch (e) {
@@ -385,7 +385,9 @@ export default function App() {
   const manualGameDataSave = async () => {
     const ok = confirm(
       "Overwrite Mod Play Vault with current Steam save/config files?\n" +
-        "This will REPLACE everything in your Mod Play Vault."
+        "This will REPLACE everything in your Mod Play Vault.\n" +
+        "If you are unsure if last session was Mod Play or Vanilla Play, choose Cancel.\n" +
+        "And back up your mod_play_vault folder first, just in case."
     );
     if (!ok) return;
 

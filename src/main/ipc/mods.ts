@@ -6,7 +6,7 @@ import chokidar, { FSWatcher } from "chokidar";
 import { safeHandle } from "./safeHandle";
 import { AppConfig, getConfig } from "../state/configStore";
 
-/** ---- Path resolvers (Phase 3A: flat keys with legacy tolerance) ---- */
+/** ---- Path resolvers ---- */
 function resolveActiveDir(cfg: AppConfig): string | undefined {
   if (cfg.activeModsPath) return cfg.activeModsPath;
   const legacy = (cfg as any)?.paths;

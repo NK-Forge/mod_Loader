@@ -1,4 +1,5 @@
 // src/ui/OperationStatusBar.tsx
+
 import React from "react";
 
 export type OperationStatusKind = "idle" | "info" | "success" | "error";

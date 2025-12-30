@@ -2,6 +2,7 @@
  * @file electron/ipc/backgroundHandlers.ts
  * @project Space Marine 2 Mod Loader
  * IPC handlers for background image management
+ * TODO: Implement background image management 
  */
 
 import { ipcMain, dialog, BrowserWindow } from "electron";

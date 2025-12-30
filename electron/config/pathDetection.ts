@@ -87,7 +87,7 @@ export async function detectPaths(): Promise<DetectedPaths> {
     result.saveDataPath = await detectSaveDataPath();
   }
 
-  // 6) 🔹 Infer platform from gameRoot or activeModsPath
+  // 6) Infer platform from gameRoot or activeModsPath
   result.platform = inferPlatformFromPath(
     result.gameRoot || result.activeModsPath
   );

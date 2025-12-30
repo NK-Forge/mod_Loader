@@ -160,7 +160,7 @@ export function registerLaunchHandlers(): void {
     try {
       await mirrorSavesIntoVault();
       console.log("[manual-save] Manual save completed");
-      // If you later track stats (files/bytes), return them here. i.e.: return { ok: true, files: 0, bytes: 0 };
+      // If we decide later to track stats (files/bytes), return them here. i.e.: return { ok: true, files: 0, bytes: 0 };
       return { ok: true };
     } catch (e: any) {
       console.error("[manual-save] Failed:", e);

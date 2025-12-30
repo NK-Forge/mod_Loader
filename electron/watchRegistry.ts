@@ -150,7 +150,7 @@ class WatchRegistry {
    * Force a full rebuild of all domains (mods, modPlay, backup).
    */
   async refreshAll() {
-    console.log("[watchRegistry] refreshAll called – rebuilding all watchers");
+    console.log("[watchRegistry] refreshAll called - rebuilding all watchers");
     await this.rebuild();
   }
 

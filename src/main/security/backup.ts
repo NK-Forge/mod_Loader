@@ -13,7 +13,7 @@ import path from "path";
 
 /** mkdir -p */
 export async function ensureDir(dir?: string | null): Promise<void> {
-  // 🚫 No-op for empty / missing paths
+  // No-op for empty / missing paths
   if (!dir || !dir.trim()) {
     return;
   }
@@ -22,7 +22,7 @@ export async function ensureDir(dir?: string | null): Promise<void> {
     await fsp.mkdir(dir, { recursive: true });
   } catch (err: any) {
     // If it already exists, we're good; otherwise bubble up
-    if (err && err.code === "EEXIST") {
+    if (err && err.code === "ERROR EXIST") {
       return;
     }
     console.error("[ensureDir] failed for", dir, err);

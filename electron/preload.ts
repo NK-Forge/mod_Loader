@@ -22,7 +22,7 @@ type AppConfig = {
 
   installStrategy: InstallStrategy;
 
-  // Phase 4A.2 background support
+  // background support
   backgroundImagePath?: string;
 };
 

@@ -113,14 +113,14 @@ export function findInstallByLocationFragment(
 /**
  * Builds a com.epicgames.launcher:// URI for a given install entry.
  *
- * We primarily prefer NamespaceId, which is what you successfully tested
+ * We primarily prefer NamespaceId, which is what we successfully tested
  * with Satisfactory / Palia. If that is missing, we fall back to AppName.
  */
 export function buildEpicLaunchUri(entry: EpicInstallEntry): string | undefined {
   const id = entry.NamespaceId || entry.AppName;
   if (!id) {
     console.warn(
-      "[Epic] Cannot build launch URI – no NamespaceId or AppName on entry:",
+      "[Epic] Cannot build launch URI - no NamespaceId or AppName on entry:",
       entry
     );
     return undefined;

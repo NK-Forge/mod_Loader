@@ -1,5 +1,4 @@
-// [MODIFIED] SetupWizard.tsx — Imperial Brass Version
-// Matches Phase 4C styling and main window visual theme
+// SetupWizard.tsx — Imperial Brass Version
 
 import React, { useEffect, useState } from "react";
 import { WindowTitleBar } from "./WindowTitleBar";

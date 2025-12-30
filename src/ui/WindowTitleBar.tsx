@@ -1,3 +1,5 @@
+// src/ui/WindowTitleBar.tsx
+
 import React from "react";
 
 export function WindowTitleBar() {

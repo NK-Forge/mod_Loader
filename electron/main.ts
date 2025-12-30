@@ -3,7 +3,7 @@
  * @project Space Marine 2 Mod Loader
  * Main entry point - refactored for modularity
  * 
- * EMERGENCY FIX VERSION - Forces attach() to be called
+ * FIXED VERSION - Forces attach() to be called
  */
 
 import { app, ipcMain } from "electron";
@@ -56,21 +56,21 @@ app.whenReady().then(async () => {
   console.log("[MAIN] App ready, starting initialization...");
   
   try {
-    // Step 1: Load config from disk into memory
+    // Load config from disk into memory
     loadConfigFromDisk();
     console.log("[MAIN] Config loaded");
     
-    // Step 2: Register window + core IPC BEFORE window creation.
+    // Register window + core IPC BEFORE window creation.
     registerWindowControlHandlers();
     registerAllIpcHandlers(null); // <-- first pass, IPC only
     console.log("[MAIN] Core IPC handlers registered (no window)");
     
-    // Step 3: Create window (preload loads, handlers already exist)
+    // Create window (preload loads, handlers already exist)
     console.log("[MAIN] Calling initializeApp()...");
     await initializeApp();
     console.log("[MAIN] initializeApp() returned successfully");
     
-    // EMERGENCY FIX: Force attach() immediately after window creation
+    // FIXED: Force attach() immediately after window creation
     console.log("[MAIN] Getting main window...");
     const mainWindow = getMainWindow();
     
@@ -81,12 +81,12 @@ app.whenReady().then(async () => {
     
     console.log("[MAIN] Main window obtained, ID:", mainWindow.id);
     
-    // EMERGENCY: Attach window directly before calling registerAllIpcHandlers
-    console.log("[MAIN] EMERGENCY FIX: Attaching window to watchRegistry directly");
+    // FIXED: Attach window directly before calling registerAllIpcHandlers
+    console.log("[MAIN] FIXED: Attaching window to watchRegistry directly");
     watchRegistry.attach(mainWindow);
     console.log("[MAIN] Window attached successfully");
     
-    // Step 4: Update handlers with window reference
+    // Update handlers with window reference
     console.log("[MAIN] Calling registerAllIpcHandlers with window...");
     registerAllIpcHandlers(mainWindow);
     console.log("[MAIN] IPC handlers registered with window");

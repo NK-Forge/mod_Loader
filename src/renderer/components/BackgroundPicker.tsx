@@ -1,7 +1,13 @@
+// src/renderer/components/BackgroundPicker.tsx
+// Component for picking and setting a custom background image
+// or resetting to the default background.
+// This was going to be part initial distribution, but
+// ended up being an optional feature instead.
+
 import * as React from "react";
 
 export default function BackgroundPicker() {
-  const api = (window as any).api; // ← relax typing just for this component
+  const api = (window as any).api; // <- relax typing just for this component
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState<string>("");
 
