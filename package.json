@@ -1,6 +1,6 @@
 {
   "name": "nkforge_sm2_mod_manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A desktop app to manage and toggle mods for Warhammer 40K: Space Marine 2 — includes saves, auto-detect, and mod profiles.",
   "author": "NK-Forge (N.Kadlec)",
   "license": "MIT",

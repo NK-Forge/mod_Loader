@@ -11,6 +11,8 @@ import { registerLaunchHandlers } from "./launchHandlers";
 import { registerBackgroundHandlers } from "./backgroundHandlers";
 import { registerSetupHandlers } from "./setupHandlers";
 import { registerVaultWatcherIPC } from "./vaultWatcher";
+import { registerDialogHandlers } from "./dialogHandlers";
+import { register } from "module";
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
   console.log("[IPC] Registering all handlers (mainWindow =", mainWindow ? mainWindow.id : "null", ")");
@@ -20,6 +22,7 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
   registerModHandlers();
   registerLaunchHandlers();
   registerBackgroundHandlers(mainWindow);
+  registerDialogHandlers(mainWindow);
   registerSetupHandlers(mainWindow);
 
   // Watchers: always call this. First call (null) sets up IPC handlers;

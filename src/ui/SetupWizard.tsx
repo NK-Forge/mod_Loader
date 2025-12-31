@@ -159,9 +159,14 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
 
   async function pick(key: keyof Paths) {
-    const p = await window.api.browseFolder();
-    if (!p) return;
-    setPaths((s) => ({ ...s, [key]: p }));
+    try {
+      const p = await window.api.browseFolder();
+      if (!p) return;
+      setPaths((s) => ({ ...s, [key]: p }));
+    } catch (e) {
+      console.error("Browse failed:", e);
+      alert("Browse dialog failed to open. Please check install integrity or run as admin.");
+    }
   }
 
   async function testAll() {
