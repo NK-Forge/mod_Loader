@@ -52,6 +52,10 @@ export async function detectPaths(): Promise<DetectedPaths> {
     "E:\\Steam\\steamapps\\common\\Space Marine 2",
     "C:\\Steam\\steamapps\\common\\Space Marine 2",
     "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Space Marine 2",
+    // Some users use a "SteamLibrary" folder on other drives
+    "C:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
+    "D:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
+    "E:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
   ].filter((p): p is string => !!p);
 
   if (!result.gameRoot) {

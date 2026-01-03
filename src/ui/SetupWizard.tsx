@@ -115,8 +115,8 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
         const cfg = await window.api.getConfig();
 
         // Support both shapes just in case:
-        // - old:  { gameRoot, gameExe, ... }
-        // - new:  { ok, detected: { gameRoot, gameExe, ... } }
+        // - old:  { gameRoot, ... }
+        // - new:  { ok, detected: { gameRoot, ... } }
         let detected: any = res;
         if (detected && typeof detected.ok === "boolean") {
           if (!detected.ok) {
@@ -144,19 +144,43 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     })();
   }, []);
 
+  useEffect(() => {
+    const root = (paths.gameRoot || "")
+      .trim()
+      .replace(/\//g, "\\")
+      .replace(/[\\]+$/g, "");
+
+    if (!root) return;
+
+    const nextExe = `${root}\\Warhammer 40000 Space Marine 2.exe`;
+
+    setPaths((s) =>
+      s.gameExe === nextExe ? s : { ...s, gameExe: nextExe }
+    );
+  }, [paths.gameRoot]);
 
   useEffect(() => {
+    const gr = (paths.gameRoot || "").toLowerCase();
+
+    const gameRootOk =
+      gr.includes("space marine 2");
+
     const ok = Boolean(
-      paths.gameExe &&
-      paths.activeModsPath &&
-      paths.modsVaultPath &&
-      paths.modPlayVaultPath &&
-      paths.saveDataPath
+      gameRootOk &&
+        paths.activeModsPath &&
+        paths.modsVaultPath &&
+        paths.modPlayVaultPath &&
+        paths.saveDataPath
     );
 
     setReady(ok);
-  }, [paths]);
-
+  }, [
+    paths.gameRoot,
+    paths.activeModsPath,
+    paths.modsVaultPath,
+    paths.modPlayVaultPath,
+    paths.saveDataPath,
+  ]);
 
   async function pick(key: keyof Paths) {
     try {
@@ -197,7 +221,12 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     ]);
 
     await window.api.completeSetup({
-      ...paths,
+      gameRoot: paths.gameRoot,
+      gameExe: paths.gameExe,
+      activeModsPath: paths.activeModsPath,
+      modsVaultPath: paths.modsVaultPath,
+      modPlayVaultPath: paths.modPlayVaultPath,
+      saveDataPath: paths.saveDataPath,
       installStrategy: "hardlink",
       autoDetected: true,
       setupComplete: true,
