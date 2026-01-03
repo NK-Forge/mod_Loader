@@ -1,6 +1,6 @@
 {
   "name": "nkforge_sm2_mod_manager",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A desktop app to manage and toggle mods for Warhammer 40K: Space Marine 2 — includes saves, auto-detect, and mod profiles.",
   "author": "NK-Forge (N.Kadlec)",
   "license": "MIT",
@@ -50,22 +50,23 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
     "directories": {
-      "buildResources": "build",
       "output": "release"
     },
+    "icon": "buildAssets/icon/icon.ico",
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "buildAssets/icon/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "buildAssets/icon/icon.ico",
+      "uninstallerIcon": "buildAssets/icon/icon.ico"
     }
   },
   "engines": {

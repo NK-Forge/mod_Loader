@@ -28,7 +28,7 @@ export function inferPlatformFromPath(p: string | undefined | null): Platform {
     squished.includes("warhammer40000spacemarine2");
 
   const inSteam =
-    n.includes("steamapps") || n.includes("/steam/") || n.includes("\\steam\\");
+    n.includes("steamapps") || n.includes("/steam/") || n.includes("\\steam\\") || n.includes("/steamlibrary/") || n.includes("\\steamlibrary\\");
 
   const inEpic =
     n.includes("epiclibrary") ||
