@@ -10,6 +10,7 @@ export const brassCard: React.CSSProperties = {
   padding: 16,
   marginBottom: 16,
   background: "rgba(6, 4, 2, 0.88)",
+  color: "#eaeaea",
   boxShadow:
     "0 0 28px rgba(0,0,0,0.9), 0 0 18px rgba(255,215,128,0.16)",
 };
