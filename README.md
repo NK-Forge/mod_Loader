@@ -237,3 +237,7 @@ Support:
 
 Thank you for using the Space Marine 2 Mod Loader.  
 Your feedback helps improve future versions and modding support.
+
+## License
+
+This project is licensed under the MIT License — see the LICENSE file for details.

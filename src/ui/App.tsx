@@ -609,6 +609,7 @@ export default function App() {
                     alignItems: "center",
                     padding: "8px 10px",
                     borderBottom: "1px solid #2f2f2f",
+                    color: "#eaeaea",
                   }}
                 >
                   <input
