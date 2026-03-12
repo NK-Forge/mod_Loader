@@ -228,9 +228,10 @@ For assistance, include:
 - Description of the issue
 - Logs or screenshots when possible
 
-Support:
-    Discord: https://discord.gg/y8G8ptxjGu
-    Email: dev@nkforge.com
+Support channels:
+
+- Discord: https://discord.gg/y8G8ptxjGu
+- Email: dev@nkforge.com
 ---
 
 ## Thank You
