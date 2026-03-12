@@ -1,9 +1,11 @@
-# Space Marine 2 Mod Loader
+# Space Marine 2 Mod Manager
 A safe and lightweight mod manager and launcher for WH40K: Space Marine 2.
+
+![Mod Manager UI](docs/images/mod_loader_ui.png)
 
 ## Overview
 
-The Space Marine 2 Mod Loader is a Windows desktop application designed to make modding simple, reliable, and safe. It provides:
+The Space Marine 2 Mod Manager is a Windows desktop application designed to make modding simple, reliable, and safe. It provides:
 
 - Automatic detection of Steam or Epic installations
 - Automatic detection of save and config directories
@@ -33,13 +35,13 @@ If you choose to use Epic, please be aware that this functionality is still in a
 ### Download
 Download the installer from Nexus Mods:
 
-[`SpaceMarine2_ModLoader_Setup.exe`](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381)
+[`SpaceMarine2_ModManager_Setup.exe`](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381)
 
 ### Installation Steps
 1. Run the installer.
 2. If Windows shows a security warning, click **More Info → Run Anyway**.
    This occurs because the installer is not yet code-signed.
-3. Launch the Mod Loader when installation completes.
+3. Launch the Mod Manager when installation completes.
 
 ---
 
@@ -63,10 +65,10 @@ After validation, you will enter the main Mod Manager.
 The Mods Vault is where your mod files are stored when not in use.
 
 - Extract mods into either the official SM2 mods folder or the Mods Vault.
-- The Mod Loader scans and lists available mods.
+- The Mod Manager scans and lists available mods.
 - If mods are added while the app is running, click **Refresh** to reload the list.
 
-Mods are not overwritten or removed by the Mod Loader. The loader links or copies files as needed for modded play.
+Mods are not overwritten or removed by the Mod Manager. The manager links or copies files as needed for modded play.
 
 ---
 
@@ -82,7 +84,7 @@ This allows you to configure mods ahead of time.
 
 ## Save Mirroring
 
-The Mod Loader separates modded progress from vanilla progression using a dedicated Mod Play Vault.
+The Mod Manager separates modded progress from vanilla progression using a dedicated Mod Play Vault.
 
 ### Manual Save
 
@@ -103,7 +105,7 @@ If you want to preserve modded saves before using Manual Save:
 After modded play:
 If the Launcher was left open and running in the background
 
-1. The Mod Loader monitors save/config activity.
+1. The Mod Manager monitors save/config activity.
 2. When the game closes, the loader detects the exit.
 3. It mirrors updated save files back into the Mod Play Vault.
 
@@ -192,7 +194,7 @@ Automatically detected under the Saber directory ending in `\config\`.
 ## Recommended Workflow
 
 ### 1. Initial Setup
-1. Launch the Mod Loader.
+1. Launch the Mod Manager.
 2. Complete the Setup Wizard to detect installs, saves, and vault folders.
 3. Confirm all paths are correct before entering the Mod Manager.
 
@@ -209,7 +211,7 @@ Automatically detected under the Saber directory ending in `\config\`.
 - Disable all mods and click **Launch (Vanilla Play)** for vanilla play.
 
 ### 5. Preserve Progress
-1. Leave the Mod Loader open during gameplay.
+1. Leave the Mod Manager open during gameplay.
 2. The loader tracks save activity during modded sessions.
 3. Upon game exit, it automatically mirrors saves into the Mod Play Vault.
 
@@ -236,7 +238,7 @@ Support channels:
 
 ## Thank You
 
-Thank you for using the Space Marine 2 Mod Loader.  
+Thank you for using the Space Marine 2 Mod Manager.  
 Your feedback helps improve future versions and modding support.
 
 ## License
