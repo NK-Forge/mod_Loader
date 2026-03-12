@@ -33,7 +33,7 @@ If you choose to use Epic, please be aware that this functionality is still in a
 ### Download
 Download the installer from Nexus Mods:
 
-`SpaceMarine2_ModLoader_Setup.exe`
+[`SpaceMarine2_ModLoader_Setup.exe`](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381)
 
 ### Installation Steps
 1. Run the installer.
