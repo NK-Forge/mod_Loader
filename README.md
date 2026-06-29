@@ -3,6 +3,7 @@ A safe and lightweight mod manager and launcher for WH40K: Space Marine 2.
 
 ![Mod Manager UI](docs/images/mod_loader_ui.png)
 
+## Public Release Released publicly through Nexus Mods with **1,000+ unique users** and **1,300+ total downloads**. [Nexus Mods release](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381?tab=files)
 ## Overview
 
 The Space Marine 2 Mod Manager is a Windows desktop application designed to make modding simple, reliable, and safe. It provides:
