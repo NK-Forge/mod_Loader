@@ -2,7 +2,7 @@
 import { EventEmitter } from "node:events";
 
 export type InstallStrategy = "auto" | "hardlink" | "symlink" | "copy";
-export type Platform = "steam" | "epic" | "unknown";
+export type Platform = "steam" | "epic" | "xbox" | "unknown";
 
 export type AppConfig = {
   setupComplete?: boolean;
@@ -19,6 +19,17 @@ export type AppConfig = {
 
   installStrategy?: InstallStrategy;
   platform?: Platform;
+  launchUri?: string;
+  steamAppId?: string;
+  epicAppName?: string;
+  epicNamespaceId?: string;
+  epicItemId?: string;
+  epicArtifactId?: string;
+  epicLaunchUri?: string;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
+  selectedStorefrontId?: string;
 
   lastRunUsedMods?: boolean;
   lastRunClosedAt?: string;

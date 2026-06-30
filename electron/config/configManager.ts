@@ -10,7 +10,7 @@ import fs from "fs";
 import { patchConfig as syncConfigStore } from "../../src/main/state/configStore";
 
 export type InstallStrategy = "hardlink" | "symlink" | "copy";
-export type Platform = "steam" | "epic" | "unknown";
+export type Platform = "steam" | "epic" | "xbox" | "unknown";
 
 export interface AppConfig {
   setupComplete: boolean;
@@ -23,6 +23,17 @@ export interface AppConfig {
   saveDataPath: string;
   installStrategy: InstallStrategy;
   platform: Platform;
+  launchUri?: string;
+  steamAppId?: string;
+  epicAppName?: string;
+  epicNamespaceId?: string;
+  epicItemId?: string;
+  epicArtifactId?: string;
+  epicLaunchUri?: string;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
+  selectedStorefrontId?: string;
   backgroundImagePath?: string;
 }
 
@@ -38,7 +49,9 @@ let config: AppConfig = {
   modPlayVaultPath: path.join(app.getPath("userData"), "mod_play_vault"),
   saveDataPath: "",
   installStrategy: "hardlink",
-  platform: "steam",
+  platform: "unknown",
+  launchUri: "",
+  steamAppId: "2183900",
   backgroundImagePath: "",
 };
 

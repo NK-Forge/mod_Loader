@@ -3,7 +3,7 @@
  * @project Space Marine 2 Mod Loader
  *
  * Game launch + monitor + save-mirror pipeline.
- * Uses platform-based URI launches (Steam/Epic).
+ * Uses platform-based URI launches (Steam/Epic/Xbox).
  * For Mod Play:
  *   - mirror vault → saves before launch
  *   - launch via URI
@@ -63,9 +63,9 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
     }
   }
 
-  // Launch game via platform-specific URI (Steam/Epic)
+  // Launch game via platform-specific URI (Steam/Epic/Xbox)
   console.log("[play:launch] Launching game via URI...");
-  const result = launchGameExe();
+  const result = await launchGameExe();
   if (!result.ok) {
     const msg = result.message || "Could not start game.";
     showLaunchError(msg);

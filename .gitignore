@@ -62,9 +62,9 @@ userData/
 logs/
 cache/
 tmp/
-scripts/
 *.txt
-.riven_bundles/
+*_Riven.ps1
+*-riven-*
 main_original.ts
 
 # Electron builder outputs

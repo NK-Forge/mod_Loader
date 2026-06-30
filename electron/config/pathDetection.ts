@@ -1,148 +1,99 @@
 /**
  * @file electron/config/pathDetection.ts
  * @project Space Marine 2 Mod Loader
- * Auto-detection of game paths
+ * Auto-detection of game paths and storefront launch targets.
  */
 
-import fs from "fs";
-import path from "path";
 import { getConfig } from "./configManager";
-import { Platform } from "../config/configManager";
-import { inferPlatformFromPath } from "../utils/platform";
+import type { Platform } from "./configManager";
+import {
+  detectSaberSaveDataPath,
+  scanStorefronts,
+  type StorefrontCandidate,
+} from "./storefrontDetection";
+import { SM2_XBOX_STORE_PRODUCT_ID } from "../utils/xboxGamePass";
 
-interface DetectedPaths {
+export interface DetectedPaths {
   gameRoot: string;
   gameExe: string;
   activeModsPath: string;
   saveDataPath: string;
-  platform?: Platform;
+  platform: Platform;
+  launchUri?: string;
+  steamAppId?: string;
+  epicAppName?: string;
+  epicNamespaceId?: string;
+  epicItemId?: string;
+  epicArtifactId?: string;
+  epicLaunchUri?: string;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
+  storefronts: StorefrontCandidate[];
+  selectedStorefrontId?: string;
+  storeFallbackUri?: string;
+}
+
+function applyCandidate(candidate?: StorefrontCandidate): Partial<DetectedPaths> {
+  if (!candidate) return {};
+
+  return {
+    gameRoot: candidate.gameRoot || "",
+    gameExe: candidate.gameExe || "",
+    activeModsPath: candidate.activeModsPath || "",
+    saveDataPath: candidate.saveDataPath || "",
+    platform: candidate.platform,
+    launchUri: candidate.launchUri || "",
+    steamAppId: candidate.steamAppId,
+    epicAppName: candidate.epic?.appName,
+    epicNamespaceId: candidate.epic?.namespaceId,
+    epicItemId: candidate.epic?.itemId,
+    epicArtifactId: candidate.epic?.artifactId,
+    epicLaunchUri: candidate.platform === "epic" ? candidate.launchUri : undefined,
+    xboxAumid: candidate.xbox?.aumid,
+    xboxLaunchUri: candidate.platform === "xbox" ? candidate.launchUri : undefined,
+    xboxStoreProductId:
+      candidate.platform === "xbox" ? candidate.storeProductId || SM2_XBOX_STORE_PRODUCT_ID : undefined,
+    selectedStorefrontId: candidate.id,
+  };
 }
 
 export async function detectPaths(): Promise<DetectedPaths> {
-  const config = getConfig();
-  const result: DetectedPaths = {
-    gameRoot: "",
-    gameExe: "",
-    activeModsPath: "",
-    saveDataPath: "",
-    platform: "unknown",
+  const config = getConfig() as any;
+
+  const scan = await scanStorefronts({
+    preferredPlatform: config.platform,
+    preferredLaunchUri: config.launchUri || config.epicLaunchUri || config.xboxLaunchUri,
+    existingGameRoot: config.gameRoot,
+    existingSaveDataPath: config.saveDataPath,
+  });
+
+  const selected = scan.selected;
+  const selectedValues = applyCandidate(selected);
+  const platform = selectedValues.platform || config.platform || "unknown";
+
+  return {
+    gameRoot: selectedValues.gameRoot || config.gameRoot || "",
+    gameExe: selectedValues.gameExe || config.gameExe || "",
+    activeModsPath: selectedValues.activeModsPath || config.activeModsPath || "",
+    saveDataPath:
+      selectedValues.saveDataPath ||
+      config.saveDataPath ||
+      detectSaberSaveDataPath(platform),
+    platform,
+    launchUri: selectedValues.launchUri || config.launchUri || "",
+    steamAppId: selectedValues.steamAppId || config.steamAppId,
+    epicAppName: selectedValues.epicAppName || config.epicAppName,
+    epicNamespaceId: selectedValues.epicNamespaceId || config.epicNamespaceId,
+    epicItemId: selectedValues.epicItemId || config.epicItemId,
+    epicArtifactId: selectedValues.epicArtifactId || config.epicArtifactId,
+    epicLaunchUri: selectedValues.epicLaunchUri || config.epicLaunchUri,
+    xboxAumid: selectedValues.xboxAumid || config.xboxAumid,
+    xboxLaunchUri: selectedValues.xboxLaunchUri || config.xboxLaunchUri,
+    xboxStoreProductId:
+      selectedValues.xboxStoreProductId || config.xboxStoreProductId || SM2_XBOX_STORE_PRODUCT_ID,
+    storefronts: scan.checks,
+    selectedStorefrontId: selectedValues.selectedStorefrontId,
+    storeFallbackUri: scan.storeFallbackUri,
   };
-
-  // 1) Prefer any existing config values that are valid
-  if (config.gameRoot && fs.existsSync(config.gameRoot)) {
-    result.gameRoot = config.gameRoot;
-  }
-
-  if (config.gameExe && fs.existsSync(config.gameExe)) {
-    result.gameExe = config.gameExe;
-  }
-
-  if (config.activeModsPath && fs.existsSync(config.activeModsPath)) {
-    result.activeModsPath = config.activeModsPath;
-  }
-
-  if (config.saveDataPath && fs.existsSync(config.saveDataPath)) {
-    result.saveDataPath = config.saveDataPath;
-  }
-
-  // 2) If we still don't have a game root, try common SM2 install paths
-  const candidateRoots = [
-    result.gameRoot,
-    config.gameRoot,
-    "E:\\Steam\\steamapps\\common\\Space Marine 2",
-    "C:\\Steam\\steamapps\\common\\Space Marine 2",
-    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Space Marine 2",
-    // Some users use a "SteamLibrary" folder on other drives
-    "C:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
-    "D:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
-    "E:\\SteamLibrary\\steamapps\\common\\Space Marine 2",
-  ].filter((p): p is string => !!p);
-
-  if (!result.gameRoot) {
-    for (const root of candidateRoots) {
-      if (fs.existsSync(root)) {
-        result.gameRoot = root;
-        break;
-      }
-    }
-  }
-
-  // 3) Game EXE under gameRoot
-  if (!result.gameExe && result.gameRoot) {
-    const exe = path.join(
-      result.gameRoot,
-      "Warhammer 40000 Space Marine 2.exe"
-    );
-    if (fs.existsSync(exe)) {
-      result.gameExe = exe;
-    }
-  }
-
-  // 4) Active mods folder under gameRoot
-  if (!result.activeModsPath && result.gameRoot) {
-    const mods = path.join(result.gameRoot, "client_pc", "root", "mods");
-    if (fs.existsSync(mods)) {
-      result.activeModsPath = mods;
-    }
-  }
-
-  // 5) Save data path in AppData\Saber\Space Marine 2\storage\steam\<id>\Main\config
-  if (!result.saveDataPath) {
-    result.saveDataPath = await detectSaveDataPath();
-  }
-
-  // 6) Infer platform from gameRoot or activeModsPath
-  result.platform = inferPlatformFromPath(
-    result.gameRoot || result.activeModsPath
-  );
-
-  return result;
-}
-
-
-async function detectSaveDataPath(): Promise<string> {
-  const userRoot = process.env.USERPROFILE || process.env.HOME;
-  if (!userRoot) return "";
-
-  const steamRoot = path.join(
-    userRoot,
-    "AppData",
-    "Local",
-    "Saber",
-    "Space Marine 2",
-    "storage",
-    "steam"
-  );
-
-  if (!fs.existsSync(steamRoot)) return "";
-
-  const level1 = fs
-    .readdirSync(steamRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
-
-  for (const d1 of level1) {
-    const first = path.join(steamRoot, d1);
-
-    // Case A: ...\steam\<entry>\Main\config
-    let candidate = path.join(first, "Main", "config");
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-
-    // Case B: ...\steam\user\<steamId>\Main\config
-    const subdirs = fs
-      .readdirSync(first, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
-
-    for (const d2 of subdirs) {
-      candidate = path.join(first, d2, "Main", "config");
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return "";
 }

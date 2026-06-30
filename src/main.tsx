@@ -12,6 +12,7 @@ import App from "./ui/App";
 import SetupWizard from "./ui/SetupWizard";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
+type Platform = "steam" | "epic" | "xbox" | "unknown";
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -22,13 +23,17 @@ type AppConfig = {
   modPlayVaultPath: string;
   saveDataPath: string;
   installStrategy: InstallStrategy;
+  platform: Platform;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
 };
 
 function needsWizard(cfg: AppConfig | null): boolean {
   if (!cfg) return true;
   if (!cfg.setupComplete) return true;
   const required = [
-    cfg.gameExe,
+    ...(cfg.platform === "xbox" ? [] : [cfg.gameExe]),
     cfg.activeModsPath,
     cfg.modsVaultPath,
     cfg.modPlayVaultPath,

@@ -1,18 +1,21 @@
 /**
  * @file electron/utils/platform.ts
- * Helpers for inferring which platform (Steam vs Epic) an install path belongs to.
+ * Helpers for inferring which platform (Steam, Epic, or Xbox/Game Pass) an
+ * install path belongs to.
  */
 
-export type Platform = "steam" | "epic" | "unknown";
+export type Platform = "steam" | "epic" | "xbox" | "unknown";
 
 /**
  * Infer platform from a game install path.
  *
  * Heuristics:
+ * - Xbox/Game Pass: path lives under XboxGames/WindowsApps/Packages and looks
+ *   like Space Marine 2.
  * - Epic: path lives under an "Epic" / "EpicLibrary" root and contains
- *         "SpaceMarine2" or "Space Marine 2" / "Warhammer40000SpaceMarine2".
+ *   "SpaceMarine2" or "Space Marine 2" / "Warhammer40000SpaceMarine2".
  * - Steam: path lives under "steamapps" and contains "Space Marine 2"
- *          (or the full "Warhammer 40,000 Space Marine 2" name).
+ *   (or the full "Warhammer 40,000 Space Marine 2" name).
  */
 export function inferPlatformFromPath(p: string | undefined | null): Platform {
   if (!p) return "unknown";
@@ -25,28 +28,30 @@ export function inferPlatformFromPath(p: string | undefined | null): Platform {
 
   const looksLikeSm2 =
     squished.includes("spacemarine2") ||
+    squished.includes("spacemarineii") ||
     squished.includes("warhammer40000spacemarine2");
 
   const inSteam =
-    n.includes("steamapps") || n.includes("/steam/") || n.includes("\\steam\\") || n.includes("/steamlibrary/") || n.includes("\\steamlibrary\\");
+    n.includes("steamapps") ||
+    n.includes("/steam/") ||
+    n.includes("/steamlibrary/");
 
-  const inEpic =
-    n.includes("epiclibrary") ||
-    n.includes("/epic games/") ||
-    n.includes("\\epic games\\");
+  const inEpic = n.includes("epiclibrary") || n.includes("/epic games/");
 
-  // 🔹 Epic detection: Epic-ish root + SM2-ish folder name
+  const inXbox =
+    n.includes("/xboxgames/") ||
+    n.includes("/windowsapps/") ||
+    n.includes("/packages/");
+
+  if (inXbox && looksLikeSm2) {
+    return "xbox";
+  }
+
   if (inEpic && looksLikeSm2) {
     return "epic";
   }
 
-  // 🔹 Steam detection: Steam-ish root + SM2-ish folder name
   if (inSteam && (looksLikeSm2 || n.includes("space marine 2"))) {
-    return "steam";
-  }
-
-  // 🔹 Fallback: if we at least see "steamapps" + "space marine 2"
-  if (inSteam && n.includes("space marine 2")) {
     return "steam";
   }
 

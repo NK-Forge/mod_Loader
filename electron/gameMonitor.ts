@@ -20,8 +20,10 @@ const execAsync = promisify(exec);
 // These are matched case-insensitively against each CSV line.
 const GAME_PROCESS_PATTERNS = [
   "warhammer 40000 space marine 2",
+  "warhammer 40,000 space marine 2",
   "space marine 2",
   "spacemarine2.exe",
+  "warhammer40000spacemarine2.exe",
 ];
 
 // Timeouts / polling settings
@@ -32,7 +34,7 @@ const MAX_CHECKS = 18_000;               // ~10 hours max (safety upper bound)
 // How many consecutive checks do we require before considering
 // the game "stably running" or "stably exited".
 const RUNNING_STABLE_CHECKS = 2;   // 2 * 2s = ~4 seconds
-const EXIT_STABLE_CHECKS = 2;      // 2 * 2s = ~4 seconds
+const EXIT_STABLE_CHECKS = 10;     // 10 * 2s = ~20 seconds; protects Xbox/Gaming Services relaunch gaps
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -19,7 +19,7 @@ import {
 } from "./theme";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
-type Platform = "steam" | "epic" | "unknown";
+type Platform = "steam" | "epic" | "xbox" | "unknown";
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -31,6 +31,9 @@ type AppConfig = {
   saveDataPath: string;
   installStrategy: InstallStrategy;
   platform: Platform;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
   backgroundImagePath?: string;
 };
 
