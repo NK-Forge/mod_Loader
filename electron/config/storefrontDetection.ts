@@ -20,10 +20,14 @@ import {
   getDefaultLauncherInstalledPath,
 } from "../utils/epicLauncher";
 import {
+  buildXboxLaunchUriFromMicrosoftGameConfig,
   detectXboxAppInstall,
   detectXboxGamePassGameRoot,
   detectXboxGamePassInstall,
+  detectXboxGamePassPackageEvidence,
   detectXboxGamePassSaveDataPath,
+  findXboxGamePassLaunchHelper,
+  readXboxMicrosoftGameConfig,
   SM2_XBOX_STORE_PRODUCT_ID,
   SM2_XBOX_STORE_URI,
   type XboxGamePassInstall,
@@ -31,7 +35,8 @@ import {
 
 export const SM2_STEAM_APP_ID = "2183900";
 
-export type StorefrontStatus = "installed" | "launcher_only" | "not_found";
+export type StorefrontStatus =
+  "installed" | "launcher_only" | "package_only" | "not_found";
 export type StorefrontConfidence = "high" | "medium" | "low" | "none";
 
 export interface StorefrontCandidate {
@@ -47,6 +52,7 @@ export interface StorefrontCandidate {
   activeModsPath: string;
   saveDataPath: string;
   launchUri: string;
+  launchHelperPath?: string;
   notes: string[];
   steamAppId?: string;
   storeProductId?: string;
@@ -60,6 +66,7 @@ export interface StorefrontCandidate {
   };
   xbox?: {
     aumid?: string;
+    launchHelperPath?: string;
     packageFamilyName?: string;
     packageFullName?: string;
     appId?: string;
@@ -106,6 +113,19 @@ function findGameExe(gameRoot: string): string {
   return candidates.find(exists) || "";
 }
 
+function findXboxGameExe(gameRoot: string): string {
+  if (!gameRoot) return "";
+
+  const xboxConfig = readXboxMicrosoftGameConfig(gameRoot);
+  if (xboxConfig?.executableName) {
+    // Keep the config-derived path even if the protected file is not directly
+    // visible; gameMonitor only needs the basename as an additional pattern.
+    return path.join(gameRoot, xboxConfig.executableName);
+  }
+
+  return findGameExe(gameRoot);
+}
+
 function looksLikeSm2Path(value: string): boolean {
   const squished = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   return (
@@ -141,7 +161,9 @@ function steamRootFromGameRoot(gameRoot?: string): string[] {
 
 function steamRootCandidates(existingGameRoot?: string): string[] {
   const envCandidates = [
-    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "Steam") : "",
+    process.env.ProgramFiles
+      ? path.join(process.env.ProgramFiles, "Steam")
+      : "",
     process.env["ProgramFiles(x86)"]
       ? path.join(process.env["ProgramFiles(x86)"] as string, "Steam")
       : "",
@@ -157,7 +179,11 @@ function steamRootCandidates(existingGameRoot?: string): string[] {
     path.join(drive, "Games", "SteamLibrary"),
   ]);
 
-  return unique([...steamRootFromGameRoot(existingGameRoot), ...envCandidates, ...libraryRoots]).filter(exists);
+  return unique([
+    ...steamRootFromGameRoot(existingGameRoot),
+    ...envCandidates,
+    ...libraryRoots,
+  ]).filter(exists);
 }
 
 function parseSteamLibraryFolders(steamRoot: string): string[] {
@@ -167,17 +193,20 @@ function parseSteamLibraryFolders(steamRoot: string): string[] {
   try {
     const raw = fs.readFileSync(vdf, "utf8");
     const paths = [...raw.matchAll(/"path"\s+"([^"]+)"/gi)].map((m) =>
-      normalizeSlashes(m[1])
+      normalizeSlashes(m[1]),
     );
 
     // Older libraryfolders.vdf files can contain direct numbered string values.
     const legacyPaths = [...raw.matchAll(/"\d+"\s+"([A-Z]:\\\\?[^"]+)"/gi)].map(
-      (m) => normalizeSlashes(m[1])
+      (m) => normalizeSlashes(m[1]),
     );
 
     return unique(paths.concat(legacyPaths)).filter(exists);
   } catch (err) {
-    console.warn("[StorefrontDetection] Failed to parse Steam libraryfolders.vdf:", err);
+    console.warn(
+      "[StorefrontDetection] Failed to parse Steam libraryfolders.vdf:",
+      err,
+    );
     return [];
   }
 }
@@ -192,13 +221,26 @@ function parseSteamInstallDir(manifestPath: string): string {
   }
 }
 
-function detectSteamCandidate(existingGameRoot?: string, existingSaveDataPath?: string): StorefrontCandidate {
+function detectSteamCandidate(
+  existingGameRoot?: string,
+  existingSaveDataPath?: string,
+): StorefrontCandidate {
   const roots = unique(
-    steamRootCandidates(existingGameRoot).flatMap((root) => [root, ...parseSteamLibraryFolders(root)])
+    steamRootCandidates(existingGameRoot).flatMap((root) => [
+      root,
+      ...parseSteamLibraryFolders(root),
+    ]),
   );
 
   const manifestHits = roots
-    .map((root) => ({ root, manifest: path.join(root, "steamapps", `appmanifest_${SM2_STEAM_APP_ID}.acf`) }))
+    .map((root) => ({
+      root,
+      manifest: path.join(
+        root,
+        "steamapps",
+        `appmanifest_${SM2_STEAM_APP_ID}.acf`,
+      ),
+    }))
     .filter((hit) => exists(hit.manifest));
 
   const hit = manifestHits[0];
@@ -247,7 +289,9 @@ function detectSteamCandidate(existingGameRoot?: string, existingSaveDataPath?: 
   };
 }
 
-function detectEpicCandidate(existingSaveDataPath?: string): StorefrontCandidate {
+function detectEpicCandidate(
+  existingSaveDataPath?: string,
+): StorefrontCandidate {
   const epic = detectEpicSpaceMarine2Install();
   if (epic?.launchUri) {
     const gameRoot = epic.InstallLocation || "";
@@ -256,7 +300,10 @@ function detectEpicCandidate(existingSaveDataPath?: string): StorefrontCandidate
       platform: "epic",
       label: "Epic Games",
       status: "installed",
-      confidence: epic.InstallLocation && looksLikeSm2Path(epic.InstallLocation) ? "high" : "medium",
+      confidence:
+        epic.InstallLocation && looksLikeSm2Path(epic.InstallLocation)
+          ? "high"
+          : "medium",
       source: epic.source,
       canLaunch: true,
       gameRoot,
@@ -276,7 +323,9 @@ function detectEpicCandidate(existingSaveDataPath?: string): StorefrontCandidate
     };
   }
 
-  const epicRecordsExist = exists(getDefaultLauncherInstalledPath()) || exists(getDefaultEpicManifestDir());
+  const epicRecordsExist =
+    exists(getDefaultLauncherInstalledPath()) ||
+    exists(getDefaultEpicManifestDir());
   return {
     id: epicRecordsExist ? "epic:launcher-only" : "epic:not-found",
     platform: "epic",
@@ -298,12 +347,23 @@ function detectEpicCandidate(existingSaveDataPath?: string): StorefrontCandidate
   };
 }
 
-async function detectXboxCandidate(existingSaveDataPath?: string): Promise<StorefrontCandidate> {
+async function detectXboxCandidate(
+  existingSaveDataPath?: string,
+): Promise<StorefrontCandidate> {
   const xbox = await detectXboxGamePassInstall();
-  const xboxApp = xbox ? null : await detectXboxAppInstall();
+  const packageEvidence = xbox
+    ? null
+    : await detectXboxGamePassPackageEvidence();
+  const xboxApp = xbox || packageEvidence ? null : await detectXboxAppInstall();
 
   if (xbox) {
     const gameRoot = detectXboxGamePassGameRoot(xbox.installLocation);
+    const launchHelperPath = findXboxGamePassLaunchHelper(gameRoot);
+    const xboxConfig = readXboxMicrosoftGameConfig(gameRoot);
+    const configLaunchUri = buildXboxLaunchUriFromMicrosoftGameConfig(
+      xbox.packageFamilyName,
+      gameRoot,
+    );
     return {
       id: `xbox:${xbox.aumid}`,
       platform: "xbox",
@@ -313,14 +373,17 @@ async function detectXboxCandidate(existingSaveDataPath?: string): Promise<Store
       source: xbox.source,
       canLaunch: true,
       gameRoot,
-      gameExe: gameRoot ? findGameExe(gameRoot) : "",
+      gameExe: gameRoot ? findXboxGameExe(gameRoot) : "",
       activeModsPath: gameRoot ? defaultActiveModsPath(gameRoot) : "",
       saveDataPath:
-        existingSaveDataPath || detectXboxGamePassSaveDataPath(xbox.packageFamilyName),
-      launchUri: xbox.launchUri,
+        existingSaveDataPath ||
+        detectXboxGamePassSaveDataPath(xbox.packageFamilyName),
+      launchUri: xbox.launchUri || configLaunchUri,
+      launchHelperPath,
       storeProductId: SM2_XBOX_STORE_PRODUCT_ID,
       xbox: {
         aumid: xbox.aumid,
+        launchHelperPath,
         packageFamilyName: xbox.packageFamilyName,
         packageFullName: xbox.packageFullName,
         appId: xbox.appId,
@@ -329,7 +392,96 @@ async function detectXboxCandidate(existingSaveDataPath?: string): Promise<Store
       notes: [
         gameRoot
           ? "Windows app detection matched Space Marine 2 and an accessible XboxGames root was found."
-          : "Windows app detection matched Space Marine 2. Launch is available, but the mod folder may need manual confirmation if the package path is protected.",
+          : "Windows app detection matched Space Marine 2. Launch will be verified by watching for the real game process, because explorer.exe can report a false failure for protected AUMIDs.",
+        xboxConfig?.executableName
+          ? `MicrosoftGame.config reports executable: ${xboxConfig.executableName}.`
+          : "MicrosoftGame.config was not visible during setup scan.",
+      ],
+    };
+  }
+
+  if (packageEvidence) {
+    const gameRoot = detectXboxGamePassGameRoot(
+      packageEvidence.installLocation,
+    );
+    const launchHelperPath = findXboxGamePassLaunchHelper(gameRoot);
+    const xboxConfig = readXboxMicrosoftGameConfig(gameRoot);
+    const configLaunchUri = buildXboxLaunchUriFromMicrosoftGameConfig(
+      packageEvidence.packageFamilyName,
+      gameRoot,
+    );
+    const blockedIds = packageEvidence.unverifiedAumids.length
+      ? packageEvidence.unverifiedAumids.join(", ")
+      : "none reported";
+
+    if (launchHelperPath || configLaunchUri) {
+      return {
+        id: `xbox:launch-helper:${packageEvidence.packageFamilyName || "space-marine-2"}`,
+        platform: "xbox",
+        label: "Xbox / PC Game Pass / Microsoft Store",
+        status: "installed",
+        confidence: "medium",
+        source: launchHelperPath
+          ? "Get-AppxPackage + XboxGames launch helper"
+          : "Get-AppxPackage + MicrosoftGame.config",
+        canLaunch: true,
+        gameRoot,
+        gameExe: gameRoot ? findXboxGameExe(gameRoot) : "",
+        activeModsPath: gameRoot ? defaultActiveModsPath(gameRoot) : "",
+        saveDataPath:
+          existingSaveDataPath ||
+          detectXboxGamePassSaveDataPath(packageEvidence.packageFamilyName),
+        launchUri: configLaunchUri,
+        launchHelperPath,
+        storeProductId: SM2_XBOX_STORE_PRODUCT_ID,
+        xbox: {
+          launchHelperPath,
+          packageFamilyName: packageEvidence.packageFamilyName,
+          packageFullName: packageEvidence.packageFullName,
+          installLocation: packageEvidence.installLocation,
+        },
+        notes: [
+          "Space Marine 2 package evidence was found. Protected Xbox AUMID launches are verified by process appearance, not by explorer.exe exit code.",
+          launchHelperPath
+            ? "Using the XboxGames gamelaunchhelper.exe broker as a fallback if the protected AUMID path does not produce the game process."
+            : "Using the MicrosoftGame.config-derived AUMID and verifying success by process appearance.",
+          xboxConfig?.executableName
+            ? `MicrosoftGame.config reports executable: ${xboxConfig.executableName}.`
+            : "MicrosoftGame.config was not visible during setup scan.",
+          `Manifest AUMIDs reported: ${blockedIds}.`,
+        ],
+      };
+    }
+
+    return {
+      id: `xbox:package-only:${packageEvidence.packageFamilyName || "space-marine-2"}`,
+      platform: "xbox",
+      label: "Xbox / PC Game Pass / Microsoft Store",
+      status: "package_only",
+      confidence: "low",
+      source: "Get-AppxPackage",
+      canLaunch: false,
+      gameRoot,
+      gameExe: gameRoot ? findXboxGameExe(gameRoot) : "",
+      activeModsPath: gameRoot ? defaultActiveModsPath(gameRoot) : "",
+      saveDataPath:
+        existingSaveDataPath ||
+        detectXboxGamePassSaveDataPath(packageEvidence.packageFamilyName),
+      launchUri: "",
+      storeProductId: SM2_XBOX_STORE_PRODUCT_ID,
+      xbox: {
+        packageFamilyName: packageEvidence.packageFamilyName,
+        packageFullName: packageEvidence.packageFullName,
+        installLocation: packageEvidence.installLocation,
+      },
+      notes: [
+        "Space Marine 2 package evidence was found, but no launchable protected AUMID or XboxGames launch helper was found.",
+        "The setup wizard will only save manifest launch targets that match the known Space Marine 2 protected AUMID path.",
+        xboxConfig?.executableName
+          ? `MicrosoftGame.config reports executable: ${xboxConfig.executableName}.`
+          : "MicrosoftGame.config was not visible during setup scan.",
+        `Manifest AUMIDs reported: ${blockedIds}.`,
+        `Store fallback: ${SM2_XBOX_STORE_URI}`,
       ],
     };
   }
@@ -365,10 +517,20 @@ async function detectXboxCandidate(existingSaveDataPath?: string): Promise<Store
 function candidateRank(candidate: StorefrontCandidate): number {
   if (candidate.status !== "installed") return 0;
 
-  const platformRank = candidate.platform === "steam" ? 30 : candidate.platform === "epic" ? 20 : 10;
-  const confidenceRank = candidate.confidence === "high" ? 100 : candidate.confidence === "medium" ? 60 : 20;
+  const platformRank =
+    candidate.platform === "steam"
+      ? 30
+      : candidate.platform === "epic"
+        ? 20
+        : 10;
+  const confidenceRank =
+    candidate.confidence === "high"
+      ? 100
+      : candidate.confidence === "medium"
+        ? 60
+        : 20;
   const pathRank = candidate.gameRoot ? 5 : 0;
-  const savedLaunchRank = candidate.launchUri ? 5 : 0;
+  const savedLaunchRank = candidate.launchUri || candidate.launchHelperPath ? 5 : 0;
 
   return confidenceRank + platformRank + pathRank + savedLaunchRank;
 }
@@ -376,14 +538,22 @@ function candidateRank(candidate: StorefrontCandidate): number {
 function selectBestCandidate(
   checks: StorefrontCandidate[],
   preferredPlatform?: Platform,
-  preferredLaunchUri?: string
+  preferredLaunchUri?: string,
 ): StorefrontCandidate | undefined {
-  const installed = checks.filter((candidate) => candidate.status === "installed");
+  const installed = checks.filter(
+    (candidate) => candidate.status === "installed",
+  );
   if (!installed.length) return undefined;
 
   const preferred = installed.find((candidate) => {
-    if (preferredLaunchUri && candidate.launchUri === preferredLaunchUri) return true;
-    if (preferredPlatform && preferredPlatform !== "unknown" && candidate.platform === preferredPlatform) return true;
+    if (preferredLaunchUri && candidate.launchUri === preferredLaunchUri)
+      return true;
+    if (
+      preferredPlatform &&
+      preferredPlatform !== "unknown" &&
+      candidate.platform === preferredPlatform
+    )
+      return true;
     return false;
   });
 
@@ -392,23 +562,30 @@ function selectBestCandidate(
   return [...installed].sort((a, b) => candidateRank(b) - candidateRank(a))[0];
 }
 
-export async function scanStorefronts(options: {
-  preferredPlatform?: Platform;
-  preferredLaunchUri?: string;
-  existingGameRoot?: string;
-  existingSaveDataPath?: string;
-} = {}): Promise<StorefrontScanResult> {
+export async function scanStorefronts(
+  options: {
+    preferredPlatform?: Platform;
+    preferredLaunchUri?: string;
+    existingGameRoot?: string;
+    existingSaveDataPath?: string;
+  } = {},
+): Promise<StorefrontScanResult> {
   const checks: StorefrontCandidate[] = [
-    detectSteamCandidate(options.existingGameRoot, options.existingSaveDataPath),
+    detectSteamCandidate(
+      options.existingGameRoot,
+      options.existingSaveDataPath,
+    ),
     detectEpicCandidate(options.existingSaveDataPath),
     await detectXboxCandidate(options.existingSaveDataPath),
   ];
 
-  const candidates = checks.filter((candidate) => candidate.status === "installed");
+  const candidates = checks.filter(
+    (candidate) => candidate.status === "installed",
+  );
   const selected = selectBestCandidate(
     checks,
     options.preferredPlatform,
-    options.preferredLaunchUri
+    options.preferredLaunchUri,
   );
 
   return {
@@ -453,10 +630,16 @@ export function detectSaberSaveDataPath(platformHint?: Platform): string {
   const localAppData = process.env.LOCALAPPDATA;
   if (!localAppData) return "";
 
-  const storageRoot = path.join(localAppData, "Saber", "Space Marine 2", "storage");
+  const storageRoot = path.join(
+    localAppData,
+    "Saber",
+    "Space Marine 2",
+    "storage",
+  );
   if (!exists(storageRoot)) return "";
 
-  const priority = platformHint === "epic" ? ["epic", "steam"] : ["steam", "epic"];
+  const priority =
+    platformHint === "epic" ? ["epic", "steam"] : ["steam", "epic"];
   for (const store of priority) {
     const hit = readSaberConfigCandidate(path.join(storageRoot, store));
     if (hit) return hit;

@@ -26,6 +26,7 @@ type AppConfig = {
   xboxAumid?: string;
   xboxLaunchUri?: string;
   xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
   selectedStorefrontId?: string;
 };
 

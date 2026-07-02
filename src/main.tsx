@@ -27,6 +27,7 @@ type AppConfig = {
   xboxAumid?: string;
   xboxLaunchUri?: string;
   xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
 };
 
 function needsWizard(cfg: AppConfig | null): boolean {

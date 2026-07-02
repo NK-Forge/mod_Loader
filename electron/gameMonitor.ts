@@ -2,23 +2,23 @@
  * @file electron/gameMonitor.ts
  * @project Space Marine 2 Mod Loader
  *
- * Monitors the Space Marine 2 game process on Windows and waits
- * for it to start and later exit.
- *
- * This version:
- * - Uses pattern-based matching (not config.gameExe)
- * - Ignores any "protected" processes in tasklist output
- * - Uses "stable" running/exit streaks to avoid tiny blips
+ * Monitors the Space Marine 2 game process on Windows and waits for it to
+ * appear and later exit. Brokered storefront launches can create short-lived
+ * helper processes, so launch success is only trusted after the real game image
+ * appears in tasklist for a stable streak.
  */
 
+import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { getConfig } from "./config/configManager";
+import { MONITORING_CONFIG } from "./config/monitoringConfig";
 
 const execAsync = promisify(exec);
 
 // Broad but game-specific patterns to look for in tasklist output.
 // These are matched case-insensitively against each CSV line.
-const GAME_PROCESS_PATTERNS = [
+const DEFAULT_GAME_PROCESS_PATTERNS = [
   "warhammer 40000 space marine 2",
   "warhammer 40,000 space marine 2",
   "space marine 2",
@@ -26,34 +26,117 @@ const GAME_PROCESS_PATTERNS = [
   "warhammer40000spacemarine2.exe",
 ];
 
-// Timeouts / polling settings
-const APPEAR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes to see the game once
-const POLL_INTERVAL_MS = 2_000;          // 2 seconds between checks
-const MAX_CHECKS = 18_000;               // ~10 hours max (safety upper bound)
+// Known manifest-only/protected decoys that should not count as the real game.
+// Do not filter the generic word "protected"; the Game Pass build may use
+// protected-launch naming in legitimate rows.
+const DECOY_PROCESS_TOKENS = ["start.protected.game"];
 
-// How many consecutive checks do we require before considering
-// the game "stably running" or "stably exited".
-const RUNNING_STABLE_CHECKS = 2;   // 2 * 2s = ~4 seconds
-const EXIT_STABLE_CHECKS = 10;     // 10 * 2s = ~20 seconds; protects Xbox/Gaming Services relaunch gaps
+// Avoid turning generic MicrosoftGame.config names like "Game.exe" into broad
+// substring matches that could accidentally match GameBar/GamingServices/helper
+// rows and falsely report a successful launch.
+const MIN_CONFIGURED_PROCESS_STEM_LENGTH = 6;
+
+const {
+  GAME_APPEAR_TIMEOUT_MS,
+  POLL_INTERVAL_MS,
+  MAX_POLL_ATTEMPTS,
+  RUNNING_STABLE_CHECKS,
+  EXIT_STABLE_CHECKS,
+} = MONITORING_CONFIG;
+
+interface ProcessPatternConfig {
+  /** Exact tasklist image names, compared only against CSV column 1. */
+  exactImageNames: string[];
+  /** Broad, game-specific fallback patterns, matched against full rows. */
+  broadPatterns: string[];
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function parseTasklistImageName(row: string): string {
+  const trimmed = row.trim();
+  if (!trimmed) return "";
+
+  // tasklist /FO CSV rows usually start like: "Image Name","PID",...
+  if (trimmed.startsWith('"')) {
+    let value = "";
+    for (let i = 1; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === '"') {
+        if (trimmed[i + 1] === '"') {
+          value += '"';
+          i++;
+          continue;
+        }
+        return value;
+      }
+      value += ch;
+    }
+    return value;
+  }
+
+  return trimmed.split(",")[0] ?? "";
+}
+
+function configuredGameProcessPatterns(): ProcessPatternConfig {
+  const config = getConfig() as any;
+  const gameExe = typeof config?.gameExe === "string" ? config.gameExe : "";
+  const exeName = gameExe ? path.basename(gameExe).toLowerCase() : "";
+  const exeStem = exeName ? exeName.replace(/\.exe$/i, "") : "";
+
+  const exactImageNames = unique([exeName]);
+  const configuredBroadPatterns =
+    exeStem.length >= MIN_CONFIGURED_PROCESS_STEM_LENGTH ? [exeStem] : [];
+
+  return {
+    exactImageNames,
+    broadPatterns: unique([
+      ...configuredBroadPatterns,
+      ...DEFAULT_GAME_PROCESS_PATTERNS,
+    ]).map((pattern) => pattern.toLowerCase()),
+  };
+}
+
+function describeProcessPatterns(patterns: ProcessPatternConfig): string {
+  const exact = patterns.exactImageNames.length
+    ? `exact images: ${patterns.exactImageNames.join(", ")}`
+    : "exact images: none";
+  const broad = patterns.broadPatterns.length
+    ? `broad patterns: ${patterns.broadPatterns.join(", ")}`
+    : "broad patterns: none";
+  return `${exact}; ${broad}`;
+}
+
+function filterTasklistRows(rawLines: string[]): string[] {
+  return rawLines.filter((line) => {
+    const lower = line.toLowerCase();
+    return !DECOY_PROCESS_TOKENS.some((token) => lower.includes(token));
+  });
+}
+
 /**
- * Check whether any Space Marine 2–related game process appears to be running.
+ * Check whether any Space Marine 2-related game process appears to be running.
  *
  * - Scans full tasklist CSV output
- * - Filters out lines containing "protected"
- * - Matches GAME_PROCESS_PATTERNS against remaining lines
+ * - Ignores only known protected decoy tokens such as start.protected.game
+ * - Matches setup-derived image names exactly against tasklist column 1
+ * - Uses broad fallback patterns only when they are game-specific enough
  */
-async function isGameProcessRunning(): Promise<boolean> {
+export async function isGameProcessRunning(
+  logPrefix: string = "[GameMonitor]",
+): Promise<boolean> {
   if (process.platform !== "win32") {
     return false;
   }
 
   try {
-    const { stdout } = await execAsync(`tasklist /FO CSV /NH`, {
+    const { stdout } = await execAsync("tasklist /FO CSV /NH", {
       windowsHide: true,
     });
 
@@ -62,81 +145,108 @@ async function isGameProcessRunning(): Promise<boolean> {
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
 
-    // Filter out any "protected" processes
-    const filteredLines = rawLines.filter(
-      (line) => !line.toLowerCase().includes("protected")
-    );
+    const filteredLines = filterTasklistRows(rawLines);
 
-    // Optional debug: show what we filtered (can comment out later)
     if (rawLines.length !== filteredLines.length) {
       const ignored = rawLines.filter((l) => !filteredLines.includes(l));
-      console.log("[GameMonitor] Ignoring 'protected' tasklist rows:", ignored);
+      console.log(`${logPrefix} Ignoring known decoy tasklist rows:`, ignored);
     }
 
+    const patterns = configuredGameProcessPatterns();
+    const imageNames = filteredLines
+      .map((line) => parseTasklistImageName(line).toLowerCase())
+      .filter(Boolean);
+
+    const exactFound = patterns.exactImageNames.some((name) =>
+      imageNames.includes(name),
+    );
+
     const haystack = filteredLines.join("\n").toLowerCase();
-
-    const found = GAME_PROCESS_PATTERNS.some((pattern) =>
-      haystack.includes(pattern.toLowerCase())
+    const broadFound = patterns.broadPatterns.some(
+      (pattern) =>
+        pattern.length >= MIN_CONFIGURED_PROCESS_STEM_LENGTH &&
+        haystack.includes(pattern),
     );
 
-    console.log(
-      "[GameMonitor] Process check =>",
-      found ? "RUNNING" : "NOT RUNNING"
-    );
+    const found = exactFound || broadFound;
+
+    console.log(`${logPrefix} Process check =>`, found ? "RUNNING" : "NOT RUNNING");
 
     return found;
   } catch (err) {
-    console.error("[GameMonitor] tasklist failed:", err);
+    console.error(`${logPrefix} tasklist failed:`, err);
     // Fail-safe: assume not running so we don't hang forever.
     return false;
   }
 }
 
 /**
+ * Wait only for the game process to appear. Used to verify brokered launches
+ * before reporting success back to the renderer/user.
+ */
+export async function waitForGameProcessToAppear(
+  timeoutMs: number = GAME_APPEAR_TIMEOUT_MS,
+  logPrefix: string = "[GameMonitor]",
+): Promise<boolean> {
+  if (process.platform !== "win32") {
+    console.log(`${logPrefix} Non-Windows platform; skipping appear probe.`);
+    return false;
+  }
+
+  const startTime = Date.now();
+  let runningStreak = 0;
+
+  console.log(
+    `${logPrefix} Waiting up to ${Math.round(timeoutMs / 1000)}s for game process to appear...`,
+  );
+
+  while (Date.now() - startTime < timeoutMs) {
+    const running = await isGameProcessRunning(logPrefix);
+
+    if (running) {
+      runningStreak++;
+      if (runningStreak >= RUNNING_STABLE_CHECKS) {
+        const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+        console.log(`${logPrefix} Game appeared after ${elapsedSec}s`);
+        return true;
+      }
+    } else {
+      runningStreak = 0;
+    }
+
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  console.warn(`${logPrefix} Game process never appeared within ${timeoutMs}ms`);
+  return false;
+}
+
+/**
  * Wait for the Space Marine 2 game process to appear and then exit.
  */
 export async function waitForGameProcessToExit(
-  logPrefix: string = "[GameMonitor]"
+  logPrefix: string = "[GameMonitor]",
 ): Promise<void> {
   if (process.platform !== "win32") {
     console.log(`${logPrefix} Non-Windows platform; skipping game monitor.`);
     return;
   }
 
+  const patterns = configuredGameProcessPatterns();
   console.log(
     `${logPrefix} Monitoring tasklist for patterns:`,
-    GAME_PROCESS_PATTERNS.join(", ")
+    describeProcessPatterns(patterns),
   );
 
   const startTime = Date.now();
-  let runningStable = false;
-  let runningStreak = 0;
+  const appeared = await waitForGameProcessToAppear(
+    GAME_APPEAR_TIMEOUT_MS,
+    logPrefix,
+  );
 
-  console.log(`${logPrefix} Phase 1: Waiting for game to start...`);
-
-  while (Date.now() - startTime < APPEAR_TIMEOUT_MS) {
-    const running = await isGameProcessRunning();
-
-    if (running) {
-      runningStreak++;
-      if (!runningStable && runningStreak >= RUNNING_STABLE_CHECKS) {
-        runningStable = true;
-        const elapsedSec = Math.round((Date.now() - startTime) / 1000);
-        console.log(
-          `${logPrefix} Game detected as stably running after ${elapsedSec}s`
-        );
-        break;
-      }
-    } else {
-      runningStreak = 0; // reset streak if we see a gap
-    }
-
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  if (!runningStable) {
+  if (!appeared) {
     console.warn(
-      `${logPrefix} Game never reached a stable running state within ${APPEAR_TIMEOUT_MS}ms - aborting monitor`
+      `${logPrefix} Game never reached a stable running state within ${GAME_APPEAR_TIMEOUT_MS}ms - aborting monitor`,
     );
     return;
   }
@@ -146,8 +256,8 @@ export async function waitForGameProcessToExit(
   let checks = 0;
   let notRunningStreak = 0;
 
-  while (checks < MAX_CHECKS) {
-    const running = await isGameProcessRunning();
+  while (checks < MAX_POLL_ATTEMPTS) {
+    const running = await isGameProcessRunning(logPrefix);
     checks++;
 
     if (!running) {
@@ -155,19 +265,19 @@ export async function waitForGameProcessToExit(
       if (notRunningStreak >= EXIT_STABLE_CHECKS) {
         const elapsedSec = Math.round((Date.now() - startTime) / 1000);
         console.log(
-          `${logPrefix} Game appears to have stably exited after ~${elapsedSec}s, stopping monitor`
+          `${logPrefix} Game appears to have stably exited after ~${elapsedSec}s, stopping monitor`,
         );
         return;
       }
     } else {
-      notRunningStreak = 0; // reset exit streak when we see it running again
+      notRunningStreak = 0;
     }
 
     // Log heartbeat every 30 checks (~60 seconds)
     if (checks % 30 === 0) {
       const elapsedMin = Math.round((Date.now() - startTime) / 1000 / 60);
       console.log(
-        `${logPrefix} Still monitoring (about ${elapsedMin} min elapsed)...`
+        `${logPrefix} Still monitoring (about ${elapsedMin} min elapsed)...`,
       );
     }
 
@@ -175,6 +285,6 @@ export async function waitForGameProcessToExit(
   }
 
   console.warn(
-    `${logPrefix} Max checks reached (${MAX_CHECKS}), stopping monitor loop`
+    `${logPrefix} Max checks reached (${MAX_POLL_ATTEMPTS}), stopping monitor loop`,
   );
 }

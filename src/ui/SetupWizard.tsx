@@ -5,7 +5,8 @@ import { WindowTitleBar } from "./WindowTitleBar";
 import defaultBg from "../renderer/assets/default_bg.jpg";
 
 type Platform = "steam" | "epic" | "xbox" | "unknown";
-type StorefrontStatus = "installed" | "launcher_only" | "not_found";
+type StorefrontStatus =
+  "installed" | "launcher_only" | "package_only" | "not_found";
 type StorefrontConfidence = "high" | "medium" | "low" | "none";
 
 type StorefrontCandidate = {
@@ -21,6 +22,7 @@ type StorefrontCandidate = {
   activeModsPath: string;
   saveDataPath: string;
   launchUri: string;
+  launchHelperPath?: string;
   notes: string[];
   steamAppId?: string;
   storeProductId?: string;
@@ -34,6 +36,7 @@ type StorefrontCandidate = {
   };
   xbox?: {
     aumid?: string;
+    launchHelperPath?: string;
     packageFamilyName?: string;
     packageFullName?: string;
     appId?: string;
@@ -60,6 +63,7 @@ type Paths = {
   xboxAumid?: string;
   xboxLaunchUri?: string;
   xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
   selectedStorefrontId?: string;
 };
 
@@ -101,7 +105,13 @@ const Field = ({
   readOnly?: boolean;
 }) => (
   <div style={{ marginBottom: 20 }}>
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 4,
+      }}
+    >
       <label style={{ fontSize: 15, color: "#e8d7b8" }}>{label}</label>
       {onPick ? <Button onClick={onPick}>Browse…</Button> : null}
     </div>
@@ -121,7 +131,9 @@ const Field = ({
     />
 
     {hint ? (
-      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8, color: "#d8c39a" }}>
+      <div
+        style={{ marginTop: 4, fontSize: 12, opacity: 0.8, color: "#d8c39a" }}
+      >
         {hint}
       </div>
     ) : null}
@@ -136,12 +148,19 @@ function platformLabel(platform: Platform): string {
 }
 
 function statusText(candidate: StorefrontCandidate): string {
-  if (candidate.status === "installed") return `Installed · ${candidate.confidence} confidence`;
-  if (candidate.status === "launcher_only") return "Launcher found · game not installed";
+  if (candidate.status === "installed")
+    return `Installed · ${candidate.confidence} confidence`;
+  if (candidate.status === "package_only")
+    return "Package found · launch target unverified";
+  if (candidate.status === "launcher_only")
+    return "Launcher found · game not installed";
   return "Not found";
 }
 
-function applyCandidateToPaths(candidate: StorefrontCandidate, current: Paths): Paths {
+function applyCandidateToPaths(
+  candidate: StorefrontCandidate,
+  current: Paths,
+): Paths {
   return {
     ...current,
     gameRoot: candidate.gameRoot || current.gameRoot || "",
@@ -158,7 +177,10 @@ function applyCandidateToPaths(candidate: StorefrontCandidate, current: Paths): 
     epicLaunchUri: candidate.platform === "epic" ? candidate.launchUri : "",
     xboxAumid: candidate.xbox?.aumid || "",
     xboxLaunchUri: candidate.platform === "xbox" ? candidate.launchUri : "",
-    xboxStoreProductId: candidate.storeProductId || current.xboxStoreProductId || "",
+    xboxLaunchHelperPath:
+      candidate.platform === "xbox" ? candidate.launchHelperPath || "" : "",
+    xboxStoreProductId:
+      candidate.storeProductId || current.xboxStoreProductId || "",
     selectedStorefrontId: candidate.id,
   };
 }
@@ -182,6 +204,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     xboxAumid: "",
     xboxLaunchUri: "",
     xboxStoreProductId: "9N9PCZWHVP2L",
+    xboxLaunchHelperPath: "",
     selectedStorefrontId: "",
   });
 
@@ -192,7 +215,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
   async function runDetection() {
     setScanning(true);
-    setStatus("Scanning Steam, Epic, Xbox/Game Pass, and Microsoft Store app records...");
+    setStatus(
+      "Scanning Steam, Epic, Xbox/Game Pass, and Microsoft Store app records...",
+    );
 
     try {
       const res = await window.api.detectPaths?.();
@@ -200,16 +225,24 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
       let detected: any = res;
       if (detected && typeof detected.ok === "boolean") {
-        if (!detected.ok) throw new Error(detected.message || "Path detection failed");
+        if (!detected.ok)
+          throw new Error(detected.message || "Path detection failed");
         detected = detected.detected;
       }
 
-      const checks = Array.isArray(detected?.storefronts) ? detected.storefronts : [];
+      const checks = Array.isArray(detected?.storefronts)
+        ? detected.storefronts
+        : [];
       setStorefronts(checks);
 
       const selected =
-        checks.find((candidate: StorefrontCandidate) => candidate.id === detected?.selectedStorefrontId) ||
-        checks.find((candidate: StorefrontCandidate) => candidate.status === "installed");
+        checks.find(
+          (candidate: StorefrontCandidate) =>
+            candidate.id === detected?.selectedStorefrontId,
+        ) ||
+        checks.find(
+          (candidate: StorefrontCandidate) => candidate.status === "installed",
+        );
 
       const base: Paths = {
         gameRoot: detected?.gameRoot || "",
@@ -229,22 +262,34 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
         xboxAumid: detected?.xboxAumid || "",
         xboxLaunchUri: detected?.xboxLaunchUri || "",
         xboxStoreProductId: detected?.xboxStoreProductId || "9N9PCZWHVP2L",
-        selectedStorefrontId: detected?.selectedStorefrontId || selected?.id || "",
+        xboxLaunchHelperPath: detected?.xboxLaunchHelperPath || "",
+        selectedStorefrontId:
+          detected?.selectedStorefrontId || selected?.id || "",
       };
 
       setPaths(selected ? applyCandidateToPaths(selected, base) : base);
 
-      const installedCount = checks.filter((candidate: StorefrontCandidate) => candidate.status === "installed").length;
+      const installedCount = checks.filter(
+        (candidate: StorefrontCandidate) => candidate.status === "installed",
+      ).length;
       if (installedCount > 1) {
-        setStatus("Multiple Space Marine 2 installs were found. Choose the storefront this mod loader should use.");
+        setStatus(
+          "Multiple Space Marine 2 installs were found. Choose the storefront this mod loader should use.",
+        );
       } else if (installedCount === 1) {
-        setStatus("Space Marine 2 was detected. Review the selected storefront and paths before finishing setup.");
+        setStatus(
+          "Space Marine 2 was detected. Review the selected storefront and paths before finishing setup.",
+        );
       } else {
-        setStatus("No installed Space Marine 2 storefront build was detected. You can rescan or fill paths manually if this is a custom install.");
+        setStatus(
+          "No installed Space Marine 2 storefront build was detected. You can rescan or fill paths manually if this is a custom install.",
+        );
       }
     } catch (e) {
       console.error("detectPaths failed", e);
-      setStatus("Could not auto-detect. You can rescan or fill in paths manually.");
+      setStatus(
+        "Could not auto-detect. You can rescan or fill in paths manually.",
+      );
     } finally {
       setScanning(false);
     }
@@ -255,7 +300,10 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   }, []);
 
   useEffect(() => {
-    const root = (paths.gameRoot || "").trim().replace(/\//g, "\\").replace(/[\\]+$/g, "");
+    const root = (paths.gameRoot || "")
+      .trim()
+      .replace(/\//g, "\\")
+      .replace(/[\\]+$/g, "");
 
     if (!root) return;
 
@@ -272,17 +320,23 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     const hasInstalledSelection = storefronts.some(
-      (candidate) => candidate.id === paths.selectedStorefrontId && candidate.status === "installed"
+      (candidate) =>
+        candidate.id === paths.selectedStorefrontId &&
+        candidate.status === "installed",
     );
-    const manualRootLooksValid = (paths.gameRoot || "").toLowerCase().includes("space marine 2");
-    const canLaunchSelected = Boolean(paths.launchUri || paths.platform === "steam");
+    const manualRootLooksValid = (paths.gameRoot || "")
+      .toLowerCase()
+      .includes("space marine 2");
+    const canLaunchSelected = Boolean(
+      paths.launchUri || paths.xboxLaunchHelperPath || paths.platform === "steam",
+    );
 
     const ok = Boolean(
       (hasInstalledSelection || manualRootLooksValid) &&
-        canLaunchSelected &&
-        paths.activeModsPath &&
-        paths.modsVaultPath &&
-        paths.modPlayVaultPath
+      canLaunchSelected &&
+      paths.activeModsPath &&
+      paths.modsVaultPath &&
+      paths.modPlayVaultPath,
     );
 
     setReady(ok);
@@ -295,7 +349,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       setPaths((s) => ({ ...s, [key]: p }));
     } catch (e) {
       console.error("Browse failed:", e);
-      alert("Browse dialog failed to open. Please check install integrity or run as admin.");
+      alert(
+        "Browse dialog failed to open. Please check install integrity or run as admin.",
+      );
     }
   }
 
@@ -329,6 +385,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       xboxAumid: paths.xboxAumid,
       xboxLaunchUri: paths.xboxLaunchUri,
       xboxStoreProductId: paths.xboxStoreProductId,
+      xboxLaunchHelperPath: paths.xboxLaunchHelperPath,
       selectedStorefrontId: paths.selectedStorefrontId,
       installStrategy: "hardlink",
       autoDetected: Boolean(paths.selectedStorefrontId),
@@ -339,8 +396,11 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   }
 
   const selectedStorefront = useMemo(
-    () => storefronts.find((candidate) => candidate.id === paths.selectedStorefrontId),
-    [storefronts, paths.selectedStorefrontId]
+    () =>
+      storefronts.find(
+        (candidate) => candidate.id === paths.selectedStorefrontId,
+      ),
+    [storefronts, paths.selectedStorefrontId],
   );
 
   return (
@@ -377,9 +437,17 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             color: "#f4e6c8",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
             <div>
-              <h1 style={{ marginTop: 0, color: "#f6e2b8" }}>First-Run Setup</h1>
+              <h1 style={{ marginTop: 0, color: "#f6e2b8" }}>
+                First-Run Setup
+              </h1>
               <p style={{ opacity: 0.85, marginBottom: 20 }}>{status}</p>
             </div>
             <div style={{ paddingTop: 8 }}>
@@ -406,7 +474,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                     onClick={() => selectStorefront(candidate)}
                     style={{
                       textAlign: "left",
-                      border: selected ? "1px solid rgba(117, 218, 161, 0.9)" : brassBorder,
+                      border: selected
+                        ? "1px solid rgba(117, 218, 161, 0.9)"
+                        : brassBorder,
                       borderRadius: 8,
                       padding: "10px 12px",
                       background: selected
@@ -414,13 +484,23 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                         : installed
                           ? "rgba(20,20,20,0.55)"
                           : "rgba(20,20,20,0.3)",
-                      color: installed ? "#ffe9c4" : "rgba(255, 233, 196, 0.62)",
+                      color: installed
+                        ? "#ffe9c4"
+                        : "rgba(255, 233, 196, 0.62)",
                       cursor: installed ? "pointer" : "default",
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
                       <strong>{candidate.label}</strong>
-                      <span style={{ color: installed ? "#9fe1b6" : "#d7b16c" }}>
+                      <span
+                        style={{ color: installed ? "#9fe1b6" : "#d7b16c" }}
+                      >
                         {statusText(candidate)}
                       </span>
                     </div>
@@ -428,12 +508,27 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                       Source: {candidate.source || "scan"}
                     </div>
                     {candidate.launchUri ? (
-                      <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
+                      <div
+                        style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}
+                      >
                         Launch: {candidate.launchUri}
+                      </div>
+                    ) : candidate.launchHelperPath ? (
+                      <div
+                        style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}
+                      >
+                        Launch helper: {candidate.launchHelperPath}
                       </div>
                     ) : null}
                     {candidate.notes?.length ? (
-                      <ul style={{ margin: "6px 0 0 18px", padding: 0, fontSize: 12, opacity: 0.78 }}>
+                      <ul
+                        style={{
+                          margin: "6px 0 0 18px",
+                          padding: 0,
+                          fontSize: 12,
+                          opacity: 0.78,
+                        }}
+                      >
                         {candidate.notes.map((note, index) => (
                           <li key={`${candidate.id}-note-${index}`}>{note}</li>
                         ))}
@@ -451,7 +546,14 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", fontSize: 15, color: "#e8d7b8", marginBottom: 4 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: 15,
+                color: "#e8d7b8",
+                marginBottom: 4,
+              }}
+            >
               Selected Platform
             </label>
             <select
@@ -471,6 +573,8 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                   ...s,
                   platform: nextPlatform,
                   launchUri: fallbackLaunch,
+                  xboxLaunchHelperPath:
+                    nextPlatform === "xbox" ? s.xboxLaunchHelperPath || "" : "",
                   selectedStorefrontId: "",
                 }));
               }}
@@ -486,12 +590,21 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
               <option value="unknown">Unknown / manual</option>
               <option value="steam">Steam</option>
               <option value="epic">Epic Games</option>
-              <option value="xbox">Xbox / PC Game Pass / Microsoft Store</option>
+              <option value="xbox">
+                Xbox / PC Game Pass / Microsoft Store
+              </option>
             </select>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8, color: "#d8c39a" }}>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                opacity: 0.8,
+                color: "#d8c39a",
+              }}
+            >
               {selectedStorefront
                 ? "Chosen from the storefront scan above. Manual override clears the scan selection."
-                : "Manual fallback is available after automated scan fails. Steam can use its known App ID; Epic/Xbox still need detected launch metadata."}
+                : "Manual fallback is available after automated scan fails. Steam can use its known App ID; Xbox can use an XboxGames gamelaunchhelper.exe path."}
             </div>
           </div>
 
@@ -502,11 +615,28 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             hint="URI/AUMID launch target built internally by the setup wizard."
           />
 
+          {paths.platform === "xbox" ? (
+            <Field
+              label="Xbox Launch Helper"
+              value={paths.xboxLaunchHelperPath || ""}
+              onChange={(v) =>
+                setPaths((s) => ({
+                  ...s,
+                  xboxLaunchHelperPath: v,
+                  selectedStorefrontId: "",
+                }))
+              }
+              hint="Xbox/Game Pass fallback broker. Auto-detection fills this when it finds XboxGames\\<Game>\\Content\\gamelaunchhelper.exe; manual paste is available if detection cannot see it."
+            />
+          ) : null}
+
           <Field
             label="Game Root"
             value={paths.gameRoot}
             onPick={() => pick("gameRoot")}
-            onChange={(v) => setPaths((s) => ({ ...s, gameRoot: v, selectedStorefrontId: "" }))}
+            onChange={(v) =>
+              setPaths((s) => ({ ...s, gameRoot: v, selectedStorefrontId: "" }))
+            }
             hint="Base installation directory of Space Marine 2. Manual fallback only if automated scan cannot see the install."
           />
 
@@ -544,7 +674,14 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             }
           />
 
-          <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div
+            style={{
+              marginTop: 20,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
             <div style={{ fontSize: 12, opacity: 0.75, alignSelf: "center" }}>
               {ready
                 ? "Ready to finish."

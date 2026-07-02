@@ -34,6 +34,7 @@ type AppConfig = {
   xboxAumid?: string;
   xboxLaunchUri?: string;
   xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
   backgroundImagePath?: string;
 };
 
@@ -325,7 +326,7 @@ export default function App() {
       } else {
         setTempStatus({
           kind: "success",
-          message: "Launched Mod Play; saves will mirror back on exit.",
+          message: "Mod Play session complete; saves mirrored back to vault.",
         });
       }
     } catch (e: any) {
@@ -356,7 +357,7 @@ export default function App() {
       } else {
         setTempStatus({
           kind: "success",
-          message: "Launched Vanilla Play.",
+          message: "Vanilla launch requested.",
         });
       }
     } catch (e: any) {
@@ -669,14 +670,14 @@ export default function App() {
               <button
                 style={launchBtnStyle(canLaunchMod)}
                 onClick={launchModPlay}
-                disabled={!canLaunchMod}
+                disabled={!canLaunchMod || launching}
               >
                 Launch (Mod Play)
               </button>
               <button
                 style={launchBtnStyle(canLaunchVan)}
                 onClick={launchVanillaPlay}
-                disabled={!canLaunchVan}
+                disabled={!canLaunchVan || launching}
               >
                 Launch (Vanilla Play)
               </button>

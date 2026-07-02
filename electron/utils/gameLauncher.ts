@@ -8,14 +8,24 @@
  */
 
 import { shell, dialog } from "electron";
-import { execFile } from "child_process";
+import fs from "fs";
+import path from "path";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { getConfig } from "../config/configManager";
 import { getEpicLaunchUriForSpaceMarine2 } from "./epicLauncher";
 import {
+  buildXboxLaunchUriFromMicrosoftGameConfig,
+  detectXboxGamePassGameRoot,
   detectXboxGamePassInstall,
+  detectXboxGamePassPackageEvidence,
+  findXboxGamePassLaunchHelper,
+  isBlockedXboxLaunchUri,
+  isWindowsAppsPath,
   SM2_XBOX_STORE_URI,
 } from "./xboxGamePass";
+import { isGameProcessRunning, waitForGameProcessToAppear } from "../gameMonitor";
+import { MONITORING_CONFIG } from "../config/monitoringConfig";
 
 const execFileAsync = promisify(execFile);
 
@@ -82,7 +92,9 @@ function launchViaSteam(): LaunchResult {
   const steamAppId: string =
     (config?.steamAppId && String(config.steamAppId)) || DEFAULT_STEAM_APP_ID;
 
-  const steamUri = cached.startsWith("steam://") ? cached : `steam://run/${steamAppId}`;
+  const steamUri = cached.startsWith("steam://")
+    ? cached
+    : `steam://run/${steamAppId}`;
   console.log("[GameLauncher] Launching via Steam URI:", steamUri);
 
   try {
@@ -104,7 +116,8 @@ function launchViaSteam(): LaunchResult {
 function launchViaEpic(): LaunchResult {
   console.log("[GameLauncher] Resolving Epic launch URI...");
 
-  const cached = stringConfigValue("epicLaunchUri") || stringConfigValue("launchUri");
+  const cached =
+    stringConfigValue("epicLaunchUri") || stringConfigValue("launchUri");
   const uri = cached.startsWith("com.epicgames.launcher://")
     ? cached
     : getEpicLaunchUriForSpaceMarine2();
@@ -132,18 +145,113 @@ function launchViaEpic(): LaunchResult {
 }
 
 function cachedXboxLaunchUri(): string {
-  const cached = stringConfigValue("xboxLaunchUri") || stringConfigValue("launchUri");
-  return cached.startsWith("shell:AppsFolder\\") ? cached : "";
+  const cached =
+    stringConfigValue("xboxLaunchUri") || stringConfigValue("launchUri");
+  if (!cached.startsWith("shell:AppsFolder\\")) return "";
+
+  if (isBlockedXboxLaunchUri(cached)) {
+    console.warn(
+      "[GameLauncher] Ignoring unsafe/unverified Xbox launch URI from config:",
+      cached,
+    );
+    return "";
+  }
+
+  return cached;
 }
 
-async function openShellAppsFolderUri(uri: string): Promise<LaunchResult> {
+function cachedXboxLaunchHelperPath(): string {
+  const helper = stringConfigValue("xboxLaunchHelperPath");
+  if (!helper) return "";
+
+  // Self-heal configs poisoned by earlier detection versions that persisted a
+  // DLC package's helper from WindowsApps (e.g. ...SpaceMarine2-DLC4_...).
+  // Launching that helper never starts the base game; ignore it so the launch
+  // chain falls through to fresh detection against the XboxGames root.
+  if (isWindowsAppsPath(helper)) {
+    console.warn(
+      "[GameLauncher] Ignoring WindowsApps (DLC/stub) Xbox launch helper path from config:",
+      helper,
+    );
+    return "";
+  }
+
+  try {
+    if (fs.existsSync(helper)) return helper;
+  } catch {
+    // Ignore inaccessible/stale configured helpers.
+  }
+
+  console.warn(
+    "[GameLauncher] Ignoring stale Xbox launch helper path from config:",
+    helper,
+  );
+  return "";
+}
+
+async function verifyXboxLaunchAppeared(
+  method: string,
+  detail?: string,
+  timeoutMs: number = MONITORING_CONFIG.GAME_APPEAR_TIMEOUT_MS,
+): Promise<LaunchResult> {
+  const appeared = await waitForGameProcessToAppear(timeoutMs, "[GameLauncher]");
+  if (appeared) return { ok: true };
+
+  const timeoutSec = Math.round(timeoutMs / 1000);
+  const detailSuffix = detail ? `\n\nLaunch detail: ${detail}` : "";
+  return {
+    ok: false,
+    message:
+      `The Xbox/Game Pass launch request was sent via ${method}, but Space Marine 2 did not appear within ${timeoutSec} seconds. ` +
+      "Confirm the Xbox app is signed in, the Game Pass/Store license is present, and Gaming Services is healthy, then retry. " +
+      `Store page: ${SM2_XBOX_STORE_URI}${detailSuffix}`,
+  };
+}
+
+async function launchViaExecutableHelper(
+  helperPath: string,
+): Promise<LaunchResult> {
+  if (await isGameProcessRunning("[GameLauncher]")) {
+    console.log(
+      "[GameLauncher] Game process is already running; verifying before launching helper again.",
+    );
+    return verifyXboxLaunchAppeared("existing game process", helperPath);
+  }
+
+  try {
+    const child = spawn(helperPath, [], {
+      cwd: path.dirname(helperPath),
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+
+    console.log("[GameLauncher] Launched Xbox helper:", helperPath);
+  } catch (err: any) {
+    console.error("[GameLauncher] Xbox launch helper failed:", err);
+    return {
+      ok: false,
+      message: err?.message || "Xbox/Game Pass launch helper failed",
+    };
+  }
+
+  return verifyXboxLaunchAppeared("gamelaunchhelper.exe", helperPath);
+}
+
+async function openShellAppsFolderUri(
+  uri: string,
+  timeoutMs: number = MONITORING_CONFIG.GAME_APPEAR_TIMEOUT_MS,
+): Promise<LaunchResult> {
+  let launchDetail = "";
+
   try {
     await shell.openExternal(uri);
-    return { ok: true };
+    return verifyXboxLaunchAppeared("AppsFolder URI", uri, timeoutMs);
   } catch (shellErr: any) {
+    launchDetail = shellErr?.message || String(shellErr);
     console.warn(
       "[GameLauncher] shell.openExternal failed for AppsFolder URI; falling back to explorer.exe:",
-      shellErr
+      shellErr,
     );
   }
 
@@ -156,14 +264,23 @@ async function openShellAppsFolderUri(uri: string): Promise<LaunchResult> {
 
   try {
     await execFileAsync("explorer.exe", [uri], { windowsHide: true });
-    return { ok: true };
   } catch (explorerErr: any) {
-    console.error("[GameLauncher] explorer.exe AppsFolder launch failed:", explorerErr);
-    return {
-      ok: false,
-      message: explorerErr?.message || "Xbox/Game Pass launch failed",
-    };
+    // Explorer's exit code is not a reliable launch signal for AppsFolder URIs.
+    // The beta.1 protected SM2 AUMID could start the game while explorer.exe
+    // still reported a command failure. Log it, but let process appearance
+    // decide whether launch actually succeeded.
+    launchDetail = explorerErr?.message || String(explorerErr);
+    console.warn(
+      "[GameLauncher] explorer.exe AppsFolder call reported an error; verifying by process monitor:",
+      explorerErr,
+    );
   }
+
+  return verifyXboxLaunchAppeared(
+    "explorer.exe AppsFolder URI",
+    launchDetail || uri,
+    timeoutMs,
+  );
 }
 
 /**
@@ -174,27 +291,108 @@ async function openShellAppsFolderUri(uri: string): Promise<LaunchResult> {
  * the game executable. The monitor separately waits for the real game process.
  */
 async function launchViaXboxGamePass(): Promise<LaunchResult> {
-  console.log("[GameLauncher] Resolving Xbox/Game Pass launch URI...");
+  console.log("[GameLauncher] Resolving Xbox/Game Pass launch target...");
 
-  let uri = cachedXboxLaunchUri();
+  const triedUris = new Set<string>();
+  let lastLaunchAttempt: LaunchResult | null = null;
 
-  if (!uri) {
-    const detected = await detectXboxGamePassInstall();
-    uri = detected?.launchUri || "";
+  const tryAppsFolderUri = async (
+    uri: string,
+    label: string,
+    timeoutMs: number = MONITORING_CONFIG.GAME_APPEAR_TIMEOUT_MS,
+  ): Promise<LaunchResult | null> => {
+    if (!uri || triedUris.has(uri)) return null;
+    triedUris.add(uri);
+
+    if (isBlockedXboxLaunchUri(uri)) {
+      console.warn(`[GameLauncher] Skipping blocked Xbox AUMID (${label}):`, uri);
+      return null;
+    }
+
+    console.log(`[GameLauncher] Trying Xbox/Game Pass AUMID (${label}):`, uri);
+    const result = await openShellAppsFolderUri(uri, timeoutMs);
+    lastLaunchAttempt = result;
+    if (result.ok) return result;
+
+    console.warn(
+      `[GameLauncher] Xbox/Game Pass AUMID did not produce the game process (${label}); falling through.`,
+      result.message,
+    );
+    return null;
+  };
+
+  // Restore beta.1's successful protected AUMID path as the primary route.
+  // explorer.exe may report an error for this URI, so success is verified only
+  // by waiting for the real game process to appear.
+  const cachedUriResult = await tryAppsFolderUri(
+    cachedXboxLaunchUri(),
+    "cached config",
+  );
+  if (cachedUriResult?.ok) return cachedUriResult;
+
+  const detected = await detectXboxGamePassInstall();
+  const detectedUriResult = await tryAppsFolderUri(
+    detected?.launchUri || "",
+    detected?.source === "AppxPackage"
+      ? "AppxPackage protected AUMID"
+      : "detected StartApps AUMID",
+  );
+  if (detectedUriResult?.ok) return detectedUriResult;
+
+  const evidence = await detectXboxGamePassPackageEvidence();
+  const packageFamilyName =
+    detected?.packageFamilyName || evidence?.packageFamilyName || "";
+  const gameRoot = detectXboxGamePassGameRoot(
+    detected?.installLocation || evidence?.installLocation,
+  );
+
+  const configUri = buildXboxLaunchUriFromMicrosoftGameConfig(
+    packageFamilyName,
+    gameRoot,
+  );
+  const configUriResult = await tryAppsFolderUri(
+    configUri,
+    "MicrosoftGame.config AUMID",
+  );
+  if (configUriResult?.ok) return configUriResult;
+
+  // Helper remains the fallback broker, but DLC/WindowsApps helpers are rejected
+  // by cachedXboxLaunchHelperPath() and findXboxGamePassLaunchHelper().
+  const cachedHelperPath = cachedXboxLaunchHelperPath();
+  if (cachedHelperPath) {
+    console.log(
+      "[GameLauncher] Falling back to cached XboxGames helper:",
+      cachedHelperPath,
+    );
+    const result = await launchViaExecutableHelper(cachedHelperPath);
+    if (result.ok) return result;
+    lastLaunchAttempt = result;
   }
 
-  if (!uri) {
-    console.error("[GameLauncher] Could not determine Xbox/Game Pass launch URI.");
-    return {
-      ok: false,
-      message:
-        "Could not determine Xbox/Game Pass launch URI for Space Marine 2. " +
-        `Install or repair the game from the Microsoft Store/Xbox app: ${SM2_XBOX_STORE_URI}`,
-    };
+  const detectedHelperPath = findXboxGamePassLaunchHelper(gameRoot);
+  if (detectedHelperPath) {
+    console.log(
+      "[GameLauncher] Falling back to detected XboxGames helper:",
+      detectedHelperPath,
+    );
+    const result = await launchViaExecutableHelper(detectedHelperPath);
+    if (result.ok) return result;
+    lastLaunchAttempt = result;
   }
 
-  console.log("[GameLauncher] Launching via Xbox/Game Pass URI:", uri);
-  return openShellAppsFolderUri(uri);
+  if (lastLaunchAttempt) return lastLaunchAttempt;
+
+  console.error(
+    "[GameLauncher] Could not determine Xbox/Game Pass launch target.",
+  );
+  return {
+    ok: false,
+    message:
+      "Could not determine a verified Xbox/Game Pass launch target for Space Marine 2. " +
+      "Run setup again so the wizard can re-detect the protected AUMID and XboxGames helper, " +
+      "or launch from the Xbox app manually. " +
+      `Store page: ${SM2_XBOX_STORE_URI}`,
+  };
 }
 
 /** Standard launch error dialog */
