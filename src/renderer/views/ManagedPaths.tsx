@@ -3,7 +3,7 @@ import { useImmutablePaths } from "../state/config";
 
 export default function ManagedPaths() {
   const { modsVaultPath, modPlayVaultPath } = useImmutablePaths();
-  const api = (window as any).api;
+  const api = window.api;
 
   // Read-only path input style: soft grey + subtle glow
   const ro: React.CSSProperties = {
@@ -53,10 +53,15 @@ export default function ManagedPaths() {
     boxShadow: "0 0 4px rgba(255, 210, 90, 0.4)",
   };
 
-  const handleReveal = (target?: string | null) => {
-    if (!target) return;
-    // uses the generic invoke exposed from preload -> ipcMain.handle('paths:reveal', ...)
-    api?.invoke?.("paths:reveal", target);
+  const handleReveal = async (key: "modsVault" | "modPlayVault") => {
+    try {
+      const result = await api.revealConfiguredPath(key);
+      if (!result.ok) {
+        console.warn(`Failed to reveal ${key}:`, result.message);
+      }
+    } catch (error) {
+      console.warn(`Failed to reveal ${key}:`, error);
+    }
   };
 
   return (
@@ -73,7 +78,7 @@ export default function ManagedPaths() {
           <button
             type="button"
             style={revealBtn}
-            onClick={() => handleReveal(modsVaultPath)}
+            onClick={() => handleReveal("modsVault")}
             title="Reveal in Explorer"
           >
             📁
@@ -97,7 +102,7 @@ export default function ManagedPaths() {
           <button
             type="button"
             style={revealBtn}
-            onClick={() => handleReveal(modPlayVaultPath)}
+            onClick={() => handleReveal("modPlayVault")}
             title="Reveal in Explorer"
           >
             📁

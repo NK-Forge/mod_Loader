@@ -2,12 +2,12 @@
 
 import React from "react";
 import ManagedPaths from "./ManagedPaths";
-import BackgroundPicker from "../components/BackgroundPicker";
 import { WatcherEvent } from "../hooks/useVaultWatcher";
 import WatcherActivity from "./WatcherActivity";
+import BackupRetention from "./BackupRetention";
 import { brassButton } from "../../ui/theme";
 
-type Tab = "paths" | "watcher";
+type Tab = "paths" | "watcher" | "backups" | "about";
 type Watcher = {
   events: WatcherEvent[];
   lastEvent: WatcherEvent | null;
@@ -17,7 +17,7 @@ type Props = {
   watcher: Watcher;
 };
 
-// cross-platform basename (handles / and \)
+// cross-platform basename (handles / and \\)
 function basename(p?: string) {
   if (!p) return "";
   return p.replace(/^.*[\\/]/, "");
@@ -50,9 +50,55 @@ const tabStyle = (active: boolean): React.CSSProperties => ({
 
 export default function AdvancedSettingsMenu({ watcher }: Props) {
   const [tab, setTab] = React.useState<Tab>("paths");
+  const [supportError, setSupportError] = React.useState("");
+  const [appVersion, setAppVersion] = React.useState("");
 
   // Single shared watcher instance for the entire Options screen
   const { lastEvent } = watcher;
+
+  React.useEffect(() => {
+    let mounted = true;
+    window.api
+      .getAppVersion()
+      .then((version: string) => {
+        if (mounted && version) setAppVersion(version);
+      })
+      .catch(() => {
+        // Leave the version hidden if lookup is unavailable.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const openSupportPage = async () => {
+    setSupportError("");
+    try {
+      const result = await window.api.openSupportPage();
+      if (!result?.ok) {
+        setSupportError(result?.message || "Unable to open the support page.");
+      }
+    } catch (error: any) {
+      setSupportError(error?.message || "Unable to open the support page.");
+    }
+  };
+
+  const panelId =
+    tab === "paths"
+      ? "panel-paths"
+      : tab === "watcher"
+        ? "panel-watcher"
+        : tab === "backups"
+          ? "panel-backups"
+          : "panel-about";
+  const tabId =
+    tab === "paths"
+      ? "tab-paths"
+      : tab === "watcher"
+        ? "tab-watcher"
+        : tab === "backups"
+          ? "tab-backups"
+          : "tab-about";
 
   return (
     // Parent card from App.tsx already provides the brass panel;
@@ -67,38 +113,38 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
           marginBottom: 12,
         }}
       >
-      {/* DEV-ONLY WATCHER STATUS */}
-      {import.meta.env.DEV && (
-        <div
-          style={{ marginLeft: "auto", fontSize: 12, color: subtextColor }}
-          aria-live="polite"
-        >
-          <span
-            title="Watcher heartbeat"
-            aria-label={lastEvent ? "Watcher active" : "Watcher idle"}
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background: lastEvent
-                ? "#ffd780"
-                : "rgba(140, 110, 60, 0.9)",
-              marginRight: 8,
-            }}
-          />
-          {lastEvent
-            ? `[${lastEvent.domain}] ${lastEvent.type}${
-                lastEvent.file ? ` – ${basename(lastEvent.file)}` : ""
-              }`
-            : "watching mods/ & mod_play_vault/…"}
-        </div>
-      )}
+        {/* DEV-ONLY WATCHER STATUS */}
+        {import.meta.env.DEV && (
+          <div
+            style={{ marginLeft: "auto", fontSize: 12, color: subtextColor }}
+            aria-live="polite"
+          >
+            <span
+              title="Watcher heartbeat"
+              aria-label={lastEvent ? "Watcher active" : "Watcher idle"}
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background: lastEvent
+                  ? "#ffd780"
+                  : "rgba(140, 110, 60, 0.9)",
+                marginRight: 8,
+              }}
+            />
+            {lastEvent
+              ? `[${lastEvent.domain}] ${lastEvent.type}${
+                  lastEvent.file ? ` – ${basename(lastEvent.file)}` : ""
+                }`
+              : "watching mods/ & mod_play_vault/…"}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
       <div
-        style={{ display: "flex", gap: 8, marginBottom: 12 }}
+        style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}
         role="tablist"
         aria-label="Advanced Settings tabs"
       >
@@ -122,13 +168,33 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
         >
           Watcher Activity
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === "backups"}
+          aria-controls="panel-backups"
+          id="tab-backups"
+          style={tabStyle(tab === "backups")}
+          onClick={() => setTab("backups")}
+        >
+          Backup Retention
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "about"}
+          aria-controls="panel-about"
+          id="tab-about"
+          style={tabStyle(tab === "about")}
+          onClick={() => setTab("about")}
+        >
+          About & Support
+        </button>
       </div>
 
       {/* Panel */}
       <div
-        id={tab === "paths" ? "panel-paths" : "panel-watcher"}
+        id={panelId}
         role="tabpanel"
-        aria-labelledby={tab === "paths" ? "tab-paths" : "tab-watcher"}
+        aria-labelledby={tabId}
         style={{
           border: panelBorder,
           borderRadius: 12,
@@ -138,14 +204,58 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
         }}
       >
         {tab === "paths" ? (
-          <>
-            <ManagedPaths />
-
-
-          </>
-        ) : (
+          <ManagedPaths />
+        ) : tab === "watcher" ? (
           // Pass shared watcher down so WatcherActivity uses the same events
           <WatcherActivity watcher={watcher} />
+        ) : tab === "backups" ? (
+          <BackupRetention />
+        ) : (
+          <div style={{ maxWidth: 680 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>
+              NK-Forge SM2 Mod Manager
+            </h3>
+            {appVersion && (
+              <div style={{ color: subtextColor, fontSize: 13, marginBottom: 18 }}>
+                Version {appVersion}
+              </div>
+            )}
+
+            <p style={{ margin: "0 0 14px", lineHeight: 1.55 }}>
+              The SM2 Mod Manager is built and maintained independently by NK-Forge.
+              If it has made modding easier for you and you would like to support
+              continued development, contributions are always appreciated and entirely
+              optional.
+            </p>
+            <p
+              style={{
+                margin: "0 0 16px",
+                color: subtextColor,
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+            >
+              Support does not affect access to features, updates, or help.
+            </p>
+
+            <button
+              type="button"
+              style={{ ...brassButton, padding: "8px 14px" }}
+              onClick={openSupportPage}
+              title="Open the official NK-Forge Ko-fi page in your default browser"
+            >
+              ♥ Support NK-Forge
+            </button>
+
+            {supportError && (
+              <div
+                role="alert"
+                style={{ marginTop: 12, color: "#ffb4a8", fontSize: 13 }}
+              >
+                {supportError}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

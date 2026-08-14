@@ -1,9 +1,7 @@
 // src/main/ipc/copylog.ts
-import { ipcMain } from "electron";
-import { readCopyEvents } from "../../services/SaveFileManager";
+// Intentionally inactive. BackupLogs is currently a parked/unmounted view, so no
+// renderer-facing copy-log IPC channel is registered. If the feature is revived,
+// add a dedicated handler whose inputs are bounded and whose filesystem roots are
+// resolved exclusively from trusted main-process configuration.
 
-ipcMain.handle("copylog:list", async (_evt, args: { modPlayVault: string; lastDays: number }) => {
-  const { modPlayVault, lastDays } = args || {};
-  if (!modPlayVault) return [];
-  return readCopyEvents(modPlayVault, Math.max(1, lastDays ?? 14));
-});
+export {};

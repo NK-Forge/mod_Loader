@@ -3,15 +3,15 @@
  * @project Space Marine 2 Mod Loader
  *
  * Game launch + monitor + save-mirror pipeline.
- * Uses platform-based URI launches (Steam/Epic).
+ * Uses platform-based URI launches (Steam/Epic/Xbox).
  * For Mod Play:
  *   - mirror vault → saves before launch
- *   - launch via URI
+ *   - launch via URI/helper
  *   - wait for real game process to appear + exit
  *   - mirror saves → vault after exit
  */
 
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import { getConfig } from "../config/configManager";
 import { launchGameExe, showLaunchError } from "../utils/gameLauncher";
 import {
@@ -24,6 +24,55 @@ import { waitForGameProcessToExit } from "../gameMonitor";
 let handlersRegistered = false;
 
 type LaunchMode = "mod" | "vanilla";
+type LaunchPhase = "launching" | "monitoring" | "mirroring" | "failed";
+
+function getLaunchStatusWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
+}
+
+function emitLaunchStatus(
+  phase: LaunchPhase,
+  mode: LaunchMode,
+  message: string,
+): void {
+  const payload = {
+    phase,
+    mode,
+    message,
+    timestamp: Date.now(),
+  };
+
+  console.log("[play:launch] status:", payload);
+
+  try {
+    getLaunchStatusWindow()?.webContents.send("launch:status", payload);
+  } catch (err) {
+    console.warn("[play:launch] Failed to emit launch status:", err);
+  }
+}
+
+function emitLaunchComplete(
+  ok: boolean,
+  mode: LaunchMode,
+  startedAt: number,
+  message?: string,
+): void {
+  const payload = {
+    ok,
+    mode,
+    message,
+    timestamp: Date.now(),
+    durationMs: Date.now() - startedAt,
+  };
+
+  console.log("[play:launch] complete:", payload);
+
+  try {
+    getLaunchStatusWindow()?.webContents.send("launch:complete", payload);
+  } catch (err) {
+    console.warn("[play:launch] Failed to emit launch completion:", err);
+  }
+}
 
 /**
  * Core launch pipeline used by all IPC handlers.
@@ -31,6 +80,7 @@ type LaunchMode = "mod" | "vanilla";
  */
 async function handlePlayLaunch(forceMode?: LaunchMode) {
   console.log("=== [play:launch] UNIFIED HANDLER invoked ===");
+  const startedAt = Date.now();
   const config = getConfig();
   console.log("[play:launch] activeModsPath =", config.activeModsPath);
 
@@ -46,7 +96,16 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
     isModPlay = !modsEmpty;
   }
 
+  const launchMode: LaunchMode = isModPlay ? "mod" : "vanilla";
   console.log("[play:launch] isModPlay =", isModPlay);
+
+  emitLaunchStatus(
+    "launching",
+    launchMode,
+    isModPlay
+      ? "Preparing Mod Play saves before launch…"
+      : "Requesting game launch…",
+  );
 
   // Pre-launch mirroring (only for mod play)
   if (isModPlay) {
@@ -55,23 +114,34 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
       await mirrorVaultIntoGameSavesIfPresent();
     } catch (err) {
       console.error("[play:launch] Pre-launch mirror failed:", err);
+      const message = `Failed to prepare save files: ${(err as Error).message}`;
+      emitLaunchStatus("failed", launchMode, message);
+      emitLaunchComplete(false, launchMode, startedAt, message);
       return {
         ok: false as const,
         mode: "mod" as const,
-        message: `Failed to prepare save files: ${(err as Error).message}`,
+        message,
       };
     }
   }
 
-  // Launch game via platform-specific URI (Steam/Epic)
-  console.log("[play:launch] Launching game via URI...");
-  const result = launchGameExe();
+  // Launch game via platform-specific URI/helper (Steam/Epic/Xbox)
+  console.log("[play:launch] Launching game via storefront broker...");
+  emitLaunchStatus(
+    "launching",
+    launchMode,
+    "Launch requested. Waiting for the game process to appear…",
+  );
+
+  const result = await launchGameExe();
   if (!result.ok) {
     const msg = result.message || "Could not start game.";
     showLaunchError(msg);
+    emitLaunchStatus("failed", launchMode, msg);
+    emitLaunchComplete(false, launchMode, startedAt, msg);
     return {
       ok: false as const,
-      mode: isModPlay ? ("mod" as const) : ("vanilla" as const),
+      mode: launchMode,
       message: msg,
     };
   }
@@ -81,6 +151,7 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
   // Vanilla mode: no monitoring or mirroring needed
   if (!isModPlay) {
     console.log("[play:launch] Vanilla mode - no monitoring/mirroring");
+    emitLaunchComplete(true, "vanilla", startedAt, "Vanilla launch requested.");
     return { ok: true as const, mode: "vanilla" as const, exitCode: 0 };
   }
 
@@ -90,18 +161,34 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
   try {
     const monitorStart = Date.now();
     console.log("[play:launch] Waiting for game process to appear and exit...");
+    emitLaunchStatus(
+      "monitoring",
+      "mod",
+      "Game launch verified. Waiting for the game to exit before mirroring saves…",
+    );
 
     await waitForGameProcessToExit("[play:launch]");
 
     const monitorDurationSec = Math.round((Date.now() - monitorStart) / 1000);
     console.log(
-      `[play:launch] Game exited after ~${monitorDurationSec}s, mirroring saves back to vault...`
+      `[play:launch] Game exited after ~${monitorDurationSec}s, mirroring saves back to vault...`,
     );
 
+    emitLaunchStatus(
+      "mirroring",
+      "mod",
+      "Game closed. Mirroring saves back to Mod Play Vault…",
+    );
     await mirrorSavesIntoVault();
 
     console.log("[play:launch] Auto-mirror completed successfully");
 
+    emitLaunchComplete(
+      true,
+      "mod",
+      startedAt,
+      "Mod Play session complete; saves mirrored back to vault.",
+    );
     return {
       ok: true as const,
       mode: "mod" as const,
@@ -114,10 +201,14 @@ async function handlePlayLaunch(forceMode?: LaunchMode) {
       stack: (err as Error)?.stack,
     });
 
+    const message = `Auto-mirror failed: ${errorMsg}`;
+    emitLaunchStatus("failed", "mod", message);
+    emitLaunchComplete(false, "mod", startedAt, message);
+
     return {
       ok: false as const,
       mode: "mod" as const,
-      message: `Auto-mirror failed: ${errorMsg}`,
+      message,
     };
   }
 }

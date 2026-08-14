@@ -19,7 +19,7 @@ import {
 } from "./theme";
 
 type InstallStrategy = "hardlink" | "symlink" | "copy";
-type Platform = "steam" | "epic" | "unknown";
+type Platform = "steam" | "epic" | "xbox" | "unknown";
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -31,6 +31,10 @@ type AppConfig = {
   saveDataPath: string;
   installStrategy: InstallStrategy;
   platform: Platform;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
   backgroundImagePath?: string;
 };
 
@@ -322,7 +326,7 @@ export default function App() {
       } else {
         setTempStatus({
           kind: "success",
-          message: "Launched Mod Play; saves will mirror back on exit.",
+          message: "Mod Play session complete; saves mirrored back to vault.",
         });
       }
     } catch (e: any) {
@@ -353,7 +357,7 @@ export default function App() {
       } else {
         setTempStatus({
           kind: "success",
-          message: "Launched Vanilla Play.",
+          message: "Vanilla launch requested.",
         });
       }
     } catch (e: any) {
@@ -366,15 +370,12 @@ export default function App() {
     }
   };
 
-  const openActiveModsFolder = () => {
+  const openActiveModsFolder = async () => {
     if (!cfg.activeModsPath) return;
     try {
-      if (api.revealPath) {
-        // preferred: dedicated helper from preload
-        api.revealPath(cfg.activeModsPath);
-      } else if (api.invoke) {
-        // fallback generic invoke bridge
-        api.invoke("paths:reveal", cfg.activeModsPath);
+      const result = await api.revealConfiguredPath("activeMods");
+      if (!result?.ok) {
+        console.warn("Failed to open active mods folder:", result?.message);
       }
     } catch (e) {
       console.warn("Failed to open active mods folder:", e);
@@ -666,14 +667,14 @@ export default function App() {
               <button
                 style={launchBtnStyle(canLaunchMod)}
                 onClick={launchModPlay}
-                disabled={!canLaunchMod}
+                disabled={!canLaunchMod || launching}
               >
                 Launch (Mod Play)
               </button>
               <button
                 style={launchBtnStyle(canLaunchVan)}
                 onClick={launchVanillaPlay}
-                disabled={!canLaunchVan}
+                disabled={!canLaunchVan || launching}
               >
                 Launch (Vanilla Play)
               </button>

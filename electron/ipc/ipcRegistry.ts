@@ -12,7 +12,7 @@ import { registerBackgroundHandlers } from "./backgroundHandlers";
 import { registerSetupHandlers } from "./setupHandlers";
 import { registerVaultWatcherIPC } from "./vaultWatcher";
 import { registerDialogHandlers } from "./dialogHandlers";
-import { register } from "module";
+import { registerSupportHandlers } from "./supportHandlers";
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
   console.log("[IPC] Registering all handlers (mainWindow =", mainWindow ? mainWindow.id : "null", ")");
@@ -24,6 +24,7 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow | null): void {
   registerBackgroundHandlers(mainWindow);
   registerDialogHandlers(mainWindow);
   registerSetupHandlers(mainWindow);
+  registerSupportHandlers();
 
   // Watchers: always call this. First call (null) sets up IPC handlers;
   // second call (with window) attaches the registry to that window.

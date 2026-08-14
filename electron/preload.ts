@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 // These are just for typing on the renderer side
 type InstallStrategy = "hardlink" | "symlink" | "copy";
+type Platform = "steam" | "epic" | "xbox" | "unknown";
 
 type AppConfig = {
   setupComplete: boolean;
@@ -21,9 +22,26 @@ type AppConfig = {
   saveDataPath: string;
 
   installStrategy: InstallStrategy;
+  platform: Platform;
+
+  launchUri?: string;
+  steamAppId?: string;
+  epicAppName?: string;
+  epicNamespaceId?: string;
+  epicItemId?: string;
+  epicArtifactId?: string;
+  epicLaunchUri?: string;
+  xboxAumid?: string;
+  xboxLaunchUri?: string;
+  xboxStoreProductId?: string;
+  xboxLaunchHelperPath?: string;
+  selectedStorefrontId?: string;
 
   // background support
   backgroundImagePath?: string;
+
+  // pre-reconcile backup retention
+  maxPreReconcileBackups: number;
 };
 
 type ModRow = { name: string; enabled: boolean; inVault: boolean };
@@ -32,6 +50,8 @@ type ImmutablePaths = {
   modsVaultPath: string;
   modPlayVaultPath: string;
 };
+
+type ConfiguredPathKey = "activeMods" | "modsVault" | "modPlayVault";
 
 // IPC channels actually implemented in main/ipc & main.ts
 const CH = {
@@ -58,8 +78,13 @@ const CH = {
   BG_SET: "bg:set",
   BG_RESET: "bg:reset",
 
-  // paths (immutable vault paths for Advanced Settings)
+  // paths (configured locations owned by main process)
   PATHS_IMMUTABLE_GET: "paths:immutable:get",
+  PATHS_REVEAL_CONFIGURED: "paths:revealConfigured",
+
+  // app/support
+  APP_GET_VERSION: "app:getVersion",
+  SUPPORT_OPEN: "support:open",
 } as const;
 
 // Small helper so all invoke calls log consistently if something blows up
@@ -144,6 +169,20 @@ contextBridge.exposeInMainWorld("api", {
     return invoke(CH.MANUAL_SAVE);
   },
 
+  // ----- App / Support -----
+  getAppVersion(): Promise<string> {
+    return invoke(CH.APP_GET_VERSION);
+  },
+
+  openSupportPage(): Promise<{ ok: boolean; message?: string }> {
+    return invoke(CH.SUPPORT_OPEN);
+  },
+
+  // ----- Configured filesystem locations -----
+  revealConfiguredPath(key: ConfiguredPathKey): Promise<{ ok: boolean; message?: string }> {
+    return invoke(CH.PATHS_REVEAL_CONFIGURED, key);
+  },
+
   // ----- Immutable Managed Paths (Advanced Settings → Managed Paths) -----
   async getImmutablePaths(): Promise<ImmutablePaths> {
     const res = await invoke<any>(CH.PATHS_IMMUTABLE_GET);
@@ -162,7 +201,10 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("watchers:setPaths", paths),
 
   watchersEnable: (domain: string) =>
-    ipcRenderer.invoke("watchers:enable", domain),
+    invoke("watchers:enable", domain),
+
+  watchersDisable: (domain: string) =>
+    invoke("watchers:disable", domain),
 
   onWatcherEvent: (cb: (payload: any) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
@@ -195,12 +237,6 @@ contextBridge.exposeInMainWorld("api", {
     };
   },
 
-  // ----- Generic bridge (used by hooks like useVaultWatcher) -----
-  invoke: (channel: string, ...args: any[]) => invoke(channel, ...args),
-  on: (channel: string, listener: (e: any, payload: any) => void) =>
-    ipcRenderer.on(channel, listener),
-  removeListener: (channel: string, listener: any) =>
-    ipcRenderer.removeListener(channel, listener),
 });
 
 // Handy debug in DevTools:

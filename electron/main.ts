@@ -13,7 +13,7 @@ import { getMainWindow } from "./lifecycle/windowManager";
 import { loadConfigFromDisk } from "./config/configManager";
 import { watchRegistry } from "./watchRegistry";
 
-// Import side-effect modules (legacy paths IPC)
+// Import side-effect modules (legacy/main-process IPC)
 import "../src/main/ipc/paths";
 
 /**
