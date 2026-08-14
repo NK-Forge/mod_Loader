@@ -6,7 +6,7 @@
  * Supports BOTH folder-per-mod and loose files (except ignored extensions).
  * - listMods(): merges Active + Vault as rows { name, enabled, inVault }
  * - reconcileMods(): moves entries Active<->Vault based on enabled set
- * - deleteMod(): backs up then removes a mod from Active/Vault
+ * - deleteMod(): permanently removes a mod from Active/Vault after confirmation
  */
 
 import fs from "fs";
@@ -23,7 +23,7 @@ const IGNORE_EXTS = new Set<string>([".txt"]);
 const DEFAULT_MAX_PRE_RECONCILE_BACKUPS = 3;
 const MIN_MAX_PRE_RECONCILE_BACKUPS = 1;
 const MAX_MAX_PRE_RECONCILE_BACKUPS = 10;
-const PRE_RECONCILE_BACKUP_RE = /^\d{14}-backup$/;
+const PRE_RECONCILE_BACKUP_RE = /^(\d{14})(\d{3})?-backup(?:-(\d+))?$/;
 
 /** Normalize user-configured retention to a safe bounded integer. */
 function normalizePreReconcileBackupLimit(value?: number): number {
@@ -51,10 +51,22 @@ async function prunePreReconcileBackups(
     throw err;
   }
 
+  const backupSortKey = (name: string): string => {
+    const match = PRE_RECONCILE_BACKUP_RE.exec(name);
+    if (!match) return "";
+    const milliseconds = match[2] ?? "000";
+    const collision = String(Number(match[3] ?? "0")).padStart(6, "0");
+    return `${match[1]}${milliseconds}-${collision}`;
+  };
+
   const backups = entries
     .filter((entry) => entry.isDirectory() && PRE_RECONCILE_BACKUP_RE.test(entry.name))
     .map((entry) => entry.name)
-    .sort((a, b) => b.localeCompare(a));
+    .sort((a, b) => {
+      const aKey = backupSortKey(a);
+      const bKey = backupSortKey(b);
+      return aKey < bKey ? 1 : aKey > bKey ? -1 : 0;
+    });
 
   for (const backupName of backups.slice(keep)) {
     const backupPath = path.join(preReconcileRoot, backupName);
@@ -225,8 +237,7 @@ export async function reconcileMods(
 export async function deleteMod(
   name: string,
   activeDir: string,
-  vaultDir: string,
-  _backupRoot: string // unused; kept for IPC compatibility
+  vaultDir: string
 ): Promise<{ ok: true }> {
   const safe = validateModList([name])[0];
   if (!safe) throw new Error("Invalid mod name.");

@@ -9,7 +9,9 @@ declare global {
       [key: string]: any;
 
       // new ones added by our preload changes
-      revealPath: (p: string) => Promise<void>;
+      revealConfiguredPath: (
+        key: "activeMods" | "modsVault" | "modPlayVault"
+      ) => Promise<{ ok: boolean; message?: string }>;
       getImmutablePaths: () => {
         modPlayVault: string;
         modsVault: string;
@@ -17,9 +19,6 @@ declare global {
         logsRoot: string;
       };
       onConfigChanged?: (cb: ()=>void) => () => void;
-      listCopyEvents: (modPlayVault: string, lastDays: number) => Promise<Array<{
-        ts: string; src: string; dest: string; files: number; bytes: number; ms: number; result: 'ok'|'error';
-      }>>; // Keeping in case we want to show backup logs in the future
     };
   }
 }

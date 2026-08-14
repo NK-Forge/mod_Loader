@@ -71,12 +71,10 @@ export function registerModHandlers(): void {
   ipcMain.handle("mods:delete", async (_e, modName: string) => {
     try {
       const config = getConfig();
-      const backupRoot = getBackupRoot(config.modsVaultPath);
       await deleteMod(
-        config.activeModsPath,
-        config.modsVaultPath,
         modName,
-        backupRoot
+        config.activeModsPath,
+        config.modsVaultPath
       );
       return { ok: true };
     } catch (e: any) {

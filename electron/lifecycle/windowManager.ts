@@ -6,11 +6,38 @@
 
 import { BrowserWindow, Menu, app } from "electron";
 import path from "path";
+import { fileURLToPath } from "url";
 
 let mainWindow: BrowserWindow | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+/** Allow renderer navigation only within the expected dev or packaged origin. */
+function isAllowedNavigationTarget(targetUrl: string): boolean {
+  try {
+    if (app.isPackaged) {
+      const parsed = new URL(targetUrl);
+      if (parsed.protocol !== "file:") return false;
+
+      const rendererRoot = path.resolve(__dirname, "../dist");
+      const targetPath = path.resolve(fileURLToPath(parsed));
+      return isPathInside(rendererRoot, targetPath);
+    }
+
+    return new URL(targetUrl).origin === "http://localhost:5173";
+  } catch {
+    return false;
+  }
 }
 
 export async function createWindow(): Promise<void> {
@@ -40,6 +67,21 @@ export async function createWindow(): Promise<void> {
       webSecurity: true,
       allowRunningInsecureContent: false,
     },
+  });
+
+  // The app opens approved external destinations through main-process IPC.
+  // Renderer-created windows are never needed.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    console.warn("[WINDOW] Blocked renderer window open:", url);
+    return { action: "deny" };
+  });
+
+  // Prevent renderer content from navigating the main window away from the
+  // expected Vite origin or packaged renderer files.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (isAllowedNavigationTarget(url)) return;
+    console.warn("[WINDOW] Blocked renderer navigation:", url);
+    event.preventDefault();
   });
 
   if (app.isPackaged) {

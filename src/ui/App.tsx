@@ -370,15 +370,12 @@ export default function App() {
     }
   };
 
-  const openActiveModsFolder = () => {
+  const openActiveModsFolder = async () => {
     if (!cfg.activeModsPath) return;
     try {
-      if (api.revealPath) {
-        // preferred: dedicated helper from preload
-        api.revealPath(cfg.activeModsPath);
-      } else if (api.invoke) {
-        // fallback generic invoke bridge
-        api.invoke("paths:reveal", cfg.activeModsPath);
+      const result = await api.revealConfiguredPath("activeMods");
+      if (!result?.ok) {
+        console.warn("Failed to open active mods folder:", result?.message);
       }
     } catch (e) {
       console.warn("Failed to open active mods folder:", e);

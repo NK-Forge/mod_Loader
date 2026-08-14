@@ -5,6 +5,7 @@
 type InstallStrategy = "hardlink" | "symlink" | "copy";
 type Platform = "steam" | "epic" | "xbox" | "unknown";
 
+
 type AppConfig = {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -42,6 +43,9 @@ declare global {
 
       // Browsing
       browseFolder(): Promise<string | null>;
+      revealConfiguredPath(
+        key: "activeMods" | "modsVault" | "modPlayVault"
+      ): Promise<{ ok: boolean; message?: string }>;
 
       // Config
       getConfig(): Promise<AppConfig>;
@@ -51,11 +55,17 @@ declare global {
       getAppVersion(): Promise<string>;
       openSupportPage(): Promise<{ ok: boolean; message?: string }>;
 
+      // Watchers (narrow IPC surface)
+      watchersSetPaths(paths: { mods?: string; modPlay?: string; backup?: string }): Promise<{ ok: boolean }>;
+      watchersEnable(domain: string): Promise<{ ok: boolean }>;
+      watchersDisable(domain: string): Promise<{ ok: boolean }>;
+      onWatcherEvent(cb: (payload: any) => void): () => void;
+
       // Mods (rich)
       modsScan(): Promise<Array<{ name: string; inMods: boolean; inVault: boolean }>>;
       enableMod(name: string): Promise<boolean>;
       disableMod(name: string): Promise<boolean>;
-      deleteMod(name: string): Promise<boolean>;
+      deleteMod(name: string): Promise<{ ok: boolean; message?: string }>;
 
       // Convenience (used by some UI buttons)
       listMods(): Promise<string[]>;

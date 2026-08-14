@@ -51,7 +51,7 @@ const tabStyle = (active: boolean): React.CSSProperties => ({
 export default function AdvancedSettingsMenu({ watcher }: Props) {
   const [tab, setTab] = React.useState<Tab>("paths");
   const [supportError, setSupportError] = React.useState("");
-  const [appVersion, setAppVersion] = React.useState("1.0.5");
+  const [appVersion, setAppVersion] = React.useState("");
 
   // Single shared watcher instance for the entire Options screen
   const { lastEvent } = watcher;
@@ -64,7 +64,7 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
         if (mounted && version) setAppVersion(version);
       })
       .catch(() => {
-        // Keep the release fallback if version lookup is unavailable.
+        // Leave the version hidden if lookup is unavailable.
       });
     return () => {
       mounted = false;
@@ -215,9 +215,11 @@ export default function AdvancedSettingsMenu({ watcher }: Props) {
             <h3 style={{ marginTop: 0, marginBottom: 6 }}>
               NK-Forge SM2 Mod Manager
             </h3>
-            <div style={{ color: subtextColor, fontSize: 13, marginBottom: 18 }}>
-              Version {appVersion}
-            </div>
+            {appVersion && (
+              <div style={{ color: subtextColor, fontSize: 13, marginBottom: 18 }}>
+                Version {appVersion}
+              </div>
+            )}
 
             <p style={{ margin: "0 0 14px", lineHeight: 1.55 }}>
               The SM2 Mod Manager is built and maintained independently by NK-Forge.

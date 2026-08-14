@@ -13,15 +13,10 @@ export interface WatcherEvent {
 }
 
 type Api = {
-  invoke?: (channel: string, ...args: any[]) => Promise<any>;
-  on?: (
-    channel: string,
-    listener: (_event: any, payload: any) => void
-  ) => void;
-  removeListener?: (
-    channel: string,
-    listener: (_event: any, payload: any) => void
-  ) => void;
+  watchersSetPaths?: (paths: { mods?: string; modPlay?: string; backup?: string }) => Promise<any>;
+  watchersEnable?: (domain: string) => Promise<any>;
+  watchersDisable?: (domain: string) => Promise<any>;
+  onWatcherEvent?: (cb: (payload: any) => void) => () => void;
 };
 
 const getApi = (): Api | undefined => {
@@ -41,16 +36,16 @@ export function useVaultWatcher() {
     console.log("[useVaultWatcher] lastEvent state updated:", lastEvent);
   }, [lastEvent]);
 
-  // Subscribe once to "watchers:event" from watchRegistry.broadcast(...)
+  // Subscribe once to watcher events exposed by the narrow preload API.
   React.useEffect(() => {
     const api = getApi();
-    
-    if (!api?.on || !api?.removeListener) {
-      console.warn("[useVaultWatcher] api.on/removeListener not available");
+
+    if (!api?.onWatcherEvent) {
+      console.warn("[useVaultWatcher] api.onWatcherEvent not available");
       return;
     }
 
-    const handler = (_event: any, payload: any) => {
+    const handler = (payload: any) => {
       console.log("[watchers:event] payload from main:", payload);
 
       const normalized: WatcherEvent = {
@@ -83,12 +78,12 @@ export function useVaultWatcher() {
       });
     };
 
-    api.on("watchers:event", handler);
+    const unsubscribe = api.onWatcherEvent(handler);
     console.log("[useVaultWatcher] Listener registered");
 
     return () => {
       try {
-        api.removeListener!("watchers:event", handler);
+        unsubscribe?.();
         console.log("[useVaultWatcher] Listener removed");
       } catch (e) {
         console.warn("[useVaultWatcher] error removing listener", e);
@@ -99,9 +94,9 @@ export function useVaultWatcher() {
   const setPaths = React.useCallback(
     (paths: { mods?: string; modPlay?: string; backup?: string }) => {
       const api = getApi();
-      if (!api?.invoke) return;
+      if (!api?.watchersSetPaths) return;
       api
-        .invoke("watchers:setPaths", paths)
+        .watchersSetPaths(paths)
         .catch((e) =>
           console.warn("[useVaultWatcher] watchers:setPaths failed:", e)
         );
@@ -112,9 +107,9 @@ export function useVaultWatcher() {
   const enable = React.useCallback(
     (domain: WatcherDomain) => {
       const api = getApi();
-      if (!api?.invoke) return;
+      if (!api?.watchersEnable) return;
       api
-        .invoke("watchers:enable", domain)
+        .watchersEnable(domain)
         .catch((e) =>
           console.warn("[useVaultWatcher] watchers:enable failed:", e)
         );
@@ -125,9 +120,9 @@ export function useVaultWatcher() {
   const disable = React.useCallback(
     (domain: WatcherDomain) => {
       const api = getApi();
-      if (!api?.invoke) return;
+      if (!api?.watchersDisable) return;
       api
-        .invoke("watchers:disable", domain)
+        .watchersDisable(domain)
         .catch((e) =>
           console.warn("[useVaultWatcher] watchers:disable failed:", e)
         );
