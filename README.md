@@ -1,246 +1,344 @@
-# Space Marine 2 Mod Manager
-A safe and lightweight mod manager and launcher for WH40K: Space Marine 2.
+# NK-Forge Space Marine 2 Mod Manager
+
+A Windows desktop mod manager and game launcher for **Warhammer 40,000: Space Marine 2**, built by **NK Forge**.
 
 ![Mod Manager UI](docs/images/mod_loader_ui.png)
 
+> **Current release: v1.0.5**
+>
+> Download the latest installer from [Nexus Mods](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381?tab=files).
+
 ## Overview
 
-The Space Marine 2 Mod Manager is a Windows desktop application designed to make modding simple, reliable, and safe. It provides:
+The NK-Forge Space Marine 2 Mod Manager is designed to make switching between modded and vanilla play straightforward while keeping mod files, modded saves, and recovery snapshots organized.
 
-- Automatic detection of Steam or Epic installations
-- Automatic detection of save and config directories
-- A dedicated Mods Vault to organize and manage mods
-- A separate Mod Play Vault to isolate modded saves
+### Highlights
+
+- Detects **Steam**, **Xbox / PC Game Pass**, and **Epic Games** installations
+- Dedicated **Mods Vault** for inactive mods
+- Separate **Mod Play Vault** for modded save/config snapshots
 - Toggle-based mod enabling and disabling
-- Clean launching of Space Marine 2 in either modded or vanilla mode
-- Automatic save mirroring after modded sessions
-- Manual save mirroring on demand
-- A Watcher Activity panel that shows real-time file activity
+- **Apply (no launch)** workflow for preparing mods ahead of time
+- Separate **Mod Play** and **Vanilla Play** launch paths
+- Automatic save mirroring after tracked modded sessions
+- Manual game-data save/mirroring on demand
+- Watcher Activity panel for live file activity
+- Configurable pre-reconcile backup retention
+- Transactional backup creation so incomplete snapshots are never treated as valid backups
+- About & Support panel with the installed application version
 
-No game files are ever overwritten. Modding is completely reversible, and returning to vanilla play is always safe.
+This tool is **Windows-only**.
 
-This tool is Windows-only.
+## Platform Support
 
-### Important: Epic Games Support Is Experimental
+| Platform | Status | Notes |
+| --- | --- | --- |
+| Steam | Supported | Automatic install detection and Steam launch handling. |
+| Xbox / PC Game Pass | Supported | Automatic detection and Xbox launch handling are included. |
+| Epic Games | Experimental | Epic support is included, but remains less thoroughly field-tested than Steam/Xbox. |
 
-Epic platform support is included but not fully tested.  
-Some features may not behave as expected when using the Epic version of Space Marine 2.  
-If you choose to use Epic, please be aware that this functionality is still in an early testing stage.
+If you use the Epic Games version and encounter a detection or launch issue, please include logs/screenshots when reporting it.
 
+---
+
+## What's New in v1.0.5
+
+### Backup Retention
+
+Pre-reconcile backups can be large, so v1.0.5 adds a user-controlled **Backup Retention** setting under **Options**.
+
+- Select how many backups to keep: **1–10**
+- Default retention: **3**
+- Changing the setting takes effect after the next successful reconcile backup
+- Older generated backups are pruned automatically
+- Manual/unrelated folders are not removed by the retention cleanup
+
+Default backup location:
+
+```text
+%APPDATA%\nkforge_sm2_mod_manager\backups\pre-reconcile
+```
+
+Backups are created transactionally: data is copied into a temporary snapshot first and only promoted to a retained backup after the copy completes successfully. Failed or partial copies are not counted as valid recovery snapshots.
+
+### Reliability & Safety
+
+v1.0.5 also includes:
+
+- Collision-safe backup naming for rapid/concurrent reconciles
+- Compatibility with backup folders created by earlier releases
+- Corrected permanent mod deletion behavior
+- Deterministic manager-owned backup storage
+- Narrower Electron IPC boundaries
+- Renderer navigation protections and Content Security Policy hardening
+- Safe configured-folder reveal actions
+
+### Support NK Forge
+
+An optional **About & Support** section is available under **Options**. Supporting development is entirely optional and does not affect access to features, updates, or help.
+
+[Support NK Forge on Ko-fi](https://ko-fi.com/nkforge)
 
 ---
 
 ## Installation
 
 ### Download
-Download the installer from Nexus Mods:
 
-[`SpaceMarine2_ModManager_Setup.exe`](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381)
+Download the latest installer from Nexus Mods:
+
+**[NK-Forge SM2 Mod Manager — Files](https://www.nexusmods.com/warhammer40000spacemarine2/mods/381?tab=files)**
 
 ### Installation Steps
-1. Run the installer.
-2. If Windows shows a security warning, click **More Info → Run Anyway**.
-   This occurs because the installer is not yet code-signed.
-3. Launch the Mod Manager when installation completes.
+
+1. Download the current **Main File** from Nexus Mods.
+2. Run the installer.
+3. If Windows displays a SmartScreen/security warning, choose **More info → Run anyway** if you trust the downloaded release.
+4. Launch the Mod Manager when installation completes.
+
+The installer is not currently code-signed, so Windows may display an additional warning.
 
 ---
 
 ## Initial Setup
 
-On first launch, the Setup Wizard will attempt to auto-detect:
+On first launch, the Setup Wizard attempts to detect the selected storefront installation and required paths, including:
 
-- Steam or Epic installation
-- Space Marine 2 game directory
-- Game save and config directory
-- Mods Vault directory
-- Mod Play Vault directory
+- Space Marine 2 installation
+- Save/config data
+- Mods Vault
+- Mod Play Vault
 
-If a directory cannot be auto-detected, the wizard will prompt you to select it manually.  
-After validation, you will enter the main Mod Manager.
+If a directory cannot be detected automatically, the wizard will allow you to select the appropriate location manually.
+
+After setup, configured paths can be reviewed under **Options → Managed Paths**.
 
 ---
 
 ## Mods Vault
 
-The Mods Vault is where your mod files are stored when not in use.
+The **Mods Vault** stores installed mods that are not currently active in the game's mods directory.
 
-- Extract mods into either the official SM2 mods folder or the Mods Vault.
-- The Mod Manager scans and lists available mods.
-- If mods are added while the app is running, click **Refresh** to reload the list.
+Typical workflow:
 
-Mods are not overwritten or removed by the Mod Manager. The manager links or copies files as needed for modded play.
+1. Extract/install a compatible mod into the Space Marine 2 mods directory or Mods Vault.
+2. Open or refresh the Mod Manager.
+3. Check a mod to make it active or uncheck it to return it to the vault.
+4. Click **Apply (no launch)** to reconcile the selected state.
+
+The manager moves the managed mod entries between the active mods directory and Mods Vault as needed.
 
 ---
 
 ## Enabling and Disabling Mods
 
 1. Open the Mod Manager.
-2. Toggle mods on or off.
-3. Click **Apply (no launch)** to commit changes without launching the game.
+2. Check the mods you want active.
+3. Uncheck mods you want stored in the vault.
+4. Click **Apply (no launch)** to reconcile the filesystem without launching the game.
 
-This allows you to configure mods ahead of time.
+A pre-reconcile recovery snapshot is created before the managed mod state is changed.
+
+---
+
+## Backup Retention
+
+Open:
+
+**Options → Backup Retention**
+
+Use the slider to select **1–10** pre-reconcile backups to retain.
+
+Because a snapshot can consume several gigabytes depending on your active mod set, choose a retention value appropriate for your available disk space.
+
+The manager creates the newest backup first, confirms it completed successfully, and then removes older generated snapshots beyond the selected retention limit.
 
 ---
 
 ## Save Mirroring
 
-The Mod Manager separates modded progress from vanilla progression using a dedicated Mod Play Vault.
+The Mod Manager keeps a separate **Mod Play Vault** for modded save/config snapshots.
 
-### Manual Save
+### Manual Game Data Save
 
-Click **Manual Save** to mirror all current save and config files into the Mod Play Vault.
+Use **Manual game data save** to explicitly mirror the current tracked save/config data into the Mod Play Vault.
 
-Important note:  
-If your last game session was **vanilla play**, using Manual Save will mirror those vanilla saves into the Mod Play Vault.
+> **Important:** If your most recent session was vanilla play, a manual save can mirror that current vanilla data into the Mod Play Vault. If you are unsure, make a copy of the Mod Play Vault before performing a manual mirror.
 
-If you want to preserve modded saves before using Manual Save:
+### Automatic Mirroring
 
-1. Open the Mod Play Vault folder.
-2. Go one directory up into `space_marine_2_mod_manager`.
-3. Copy and rename the `mod_play_vault` folder (for example: `mod_play_vault_backup`).
-4. You may delete the backup later if everything is correct.
+During a tracked modded launch:
 
-### Automatic Save Mirroring
+1. The manager restores the Mod Play Vault data for modded play.
+2. Space Marine 2 is launched through the detected storefront.
+3. The manager monitors the game session and relevant file activity.
+4. When the tracked game session ends, updated modded data is mirrored back to the Mod Play Vault.
 
-After modded play:
-If the Launcher was left open and running in the background
-
-1. The Mod Manager monitors save/config activity.
-2. When the game closes, the loader detects the exit.
-3. It mirrors updated save files back into the Mod Play Vault.
-
-Automatic mirroring does not occur in vanilla mode.
-We leave Vanilla to Steam or Epic Clouds to handle.
+Vanilla Play does not use the modded save-mirroring workflow.
 
 ---
 
 ## Launching Space Marine 2
 
-### Mod Play (with mods)
+### Mod Play
 
-1. Enable at least one mod.
+1. Enable the mods you want.
 2. Click **Launch (Mod Play)**.
 
-The loader will:
+The manager reconciles the selected mod state, prepares mod-play data, launches the game through the configured storefront, and tracks the session for post-game mirroring.
 
-- Mirror Mod Play Vault saves into the game’s config directory
-- Launch Space Marine 2 via Steam or Epic URI
-- Monitor the game process
-- When the game exits, automatically mirror updated saves back into the Mod Play Vault
+### Vanilla Play
 
-### Vanilla Play (no mods)
-
-1. Disable all mods.
+1. Disable the mods you do not want active.
 2. Click **Launch (Vanilla Play)**.
 
-The loader launches the game with no mods active and does not mirror saves.
+Vanilla launch intentionally avoids the Mod Play Vault mirroring workflow.
 
 ---
 
-## Watcher Activity Panel
+## Watcher Activity
 
-The Watcher Activity panel logs:
+The **Watcher Activity** panel provides visibility into manager-observed file activity, including mod and save/config events used by the application workflows.
 
-- Save file changes
-- Config file changes
-- Mod Vault file activity
-- Backup and restore operations
-- Mirror events before launch and after exit
-
-Click **Clear** to remove the displayed log (this does not affect files).
+The display can be cleared without deleting your files.
 
 ---
 
 ## File Locations
 
-Default directories (paths vary by username):
+Default manager data is stored under Electron's application-data directory:
 
-**Mods Vault**  
-```md
-C:\Users<username>\AppData\Roaming\space_marine_2_mod_manager\mods_vault
+```text
+%APPDATA%\nkforge_sm2_mod_manager
 ```
 
+Default locations include:
 
-**Mod Play Vault**  
-```md
-C:\Users<username>\AppData\Roaming\space_marine_2_mod_manager\mod_play_vault
+### Mods Vault
+
+```text
+%APPDATA%\nkforge_sm2_mod_manager\mods_vault
 ```
 
+### Mod Play Vault
 
-**Save/Config Directory**  
-Automatically detected under the Saber directory ending in `\config\`.
+```text
+%APPDATA%\nkforge_sm2_mod_manager\mod_play_vault
+```
+
+### Pre-Reconcile Backups
+
+```text
+%APPDATA%\nkforge_sm2_mod_manager\backups\pre-reconcile
+```
+
+The exact configured paths can be viewed under **Options → Managed Paths**.
+
+> If you relocate a vault, existing backups in the old manager-data location are not automatically migrated.
 
 ---
 
 ## Troubleshooting
 
-**Mods not showing up**  
-- Mods must be extracted into the correct folder.
-- Use **Refresh** if added during runtime.
+### Mods are not showing up
 
-**Game not launching**  
-- Ensure Steam or Epic Games Launcher is running.
-- Verify correct paths under Options.
+- Confirm the mod is extracted into the expected Space Marine 2 mods directory or Mods Vault.
+- Click **Refresh** if files were added while the manager was already running.
 
-**Manual Save mirrored zero files**  
-- Files may not have changed since the last mirror.
-- Confirm you are in modded mode if expecting changes.
+### Game is not launching
 
-**Auto-detect failed**  
-- Some custom installations may require manual path selection.
+- Ensure the appropriate storefront client is running when required.
+- Review detected/configured paths under **Options → Managed Paths**.
+- Include the storefront (Steam, Xbox / PC Game Pass, or Epic) when reporting the problem.
+
+### A folder button does not open Explorer
+
+Verify the corresponding configured path under **Options → Managed Paths**. The folder reveal actions only open manager-configured locations.
+
+### Backups are consuming too much disk space
+
+Open **Options → Backup Retention** and lower the retention value. The manager will prune older generated snapshots after the next successful reconcile backup.
+
+### Auto-detection failed
+
+Non-default or relocated installations may require manual path selection during setup.
 
 ---
 
 ## Recommended Workflow
 
-### 1. Initial Setup
-1. Launch the Mod Manager.
-2. Complete the Setup Wizard to detect installs, saves, and vault folders.
-3. Confirm all paths are correct before entering the Mod Manager.
-
-### 2. Add and Prepare Mods
-1. Place mods into the SM2 mods folder or Mods Vault.
-2. If added during runtime, click **Refresh** to update the list.
-
-### 3. Configure Mods
-1. Toggle mods on or off.
-2. Click **Apply (no launch)** to update configuration.
-
-### 4. Launch the Game
-- Enable mods and click **Launch (Mod Play)** for modded play.
-- Disable all mods and click **Launch (Vanilla Play)** for vanilla play.
-
-### 5. Preserve Progress
-1. Leave the Mod Manager open during gameplay.
-2. The loader tracks save activity during modded sessions.
-3. Upon game exit, it automatically mirrors saves into the Mod Play Vault.
-
-### 6. Manual Save (Optional)
-Click **Manual Save** at any time to explicitly mirror save data into the Mod Play Vault.  
-Back up the vault first if unsure of your current play mode.
+1. **Complete setup** and verify the detected storefront and paths.
+2. **Add mods** to the active mods directory or Mods Vault.
+3. **Refresh** the manager if files were added while it was running.
+4. **Select mods** and use **Apply (no launch)** to prepare the desired state.
+5. Use **Launch (Mod Play)** for a tracked modded session or **Launch (Vanilla Play)** for vanilla play.
+6. Leave the manager running during tracked Mod Play sessions so post-game mirroring can complete.
+7. Set **Backup Retention** based on the amount of disk space you want dedicated to recovery snapshots.
 
 ---
 
 ## Support
 
-For assistance, include:
+When reporting an issue, please include:
 
-- Platform (Steam or Epic)
+- Mod Manager version
+- Storefront: Steam, Xbox / PC Game Pass, or Epic Games
 - Windows version
-- Description of the issue
-- Logs or screenshots when possible
+- Description of what happened
+- Relevant logs/screenshots when possible
 
-Support channels:
+### Links
 
-- Discord: https://discord.gg/y8G8ptxjGu
-- Email: dev@nkforge.com
+- **Nexus Mods:** https://www.nexusmods.com/warhammer40000spacemarine2/mods/381?tab=files
+- **Discord:** https://discord.gg/y8G8ptxjGu
+- **Email:** dev@nkforge.com
+- **NK Forge:** https://nkforge.com
+- **Ko-fi:** https://ko-fi.com/nkforge
+
+---
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the development environment:
+
+```bash
+npm run dev
+```
+
+Type-check:
+
+```bash
+npm run type-check
+```
+
+Build production assets:
+
+```bash
+npm run build
+```
+
+Create the Windows installer/package:
+
+```bash
+npm run dist
+```
+
+> `npm start` launches the built Electron main process directly and is not the normal Vite development workflow. Use `npm run dev` for local development.
+
+---
+
+## License
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
 ---
 
 ## Thank You
 
-Thank you for using the Space Marine 2 Mod Manager.  
-Your feedback helps improve future versions and modding support.
-
-## License
-
-This project is licensed under the MIT License — see the LICENSE file for details.
+Thank you for using the NK-Forge Space Marine 2 Mod Manager and for reporting issues as the project evolves. Community feedback directly helps improve reliability, compatibility, and the safety of the mod-management workflow.
