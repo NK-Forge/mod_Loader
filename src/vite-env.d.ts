@@ -28,6 +28,7 @@ type AppConfig = {
   xboxStoreProductId?: string;
   xboxLaunchHelperPath?: string;
   selectedStorefrontId?: string;
+  maxPreReconcileBackups: number;
 };
 
 declare global {
@@ -45,6 +46,10 @@ declare global {
       // Config
       getConfig(): Promise<AppConfig>;
       setConfig(cfg: Partial<AppConfig>): Promise<{ ok: boolean; message?: string }>;
+
+      // App / Support
+      getAppVersion(): Promise<string>;
+      openSupportPage(): Promise<{ ok: boolean; message?: string }>;
 
       // Mods (rich)
       modsScan(): Promise<Array<{ name: string; inMods: boolean; inVault: boolean }>>;

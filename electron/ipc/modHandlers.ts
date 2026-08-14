@@ -5,10 +5,33 @@
  */
 
 import { ipcMain } from "electron";
+import path from "path";
 import { getConfig } from "../config/configManager";
 import { listMods, reconcileMods, deleteMod } from "../../src/main/mods/fsMods";
 
 let handlersRegistered = false;
+
+/**
+ * Keep pre-reconcile snapshots beside the configured Mods Vault rather than
+ * resolving a relative path from the process working directory. This makes
+ * the backup location deterministic for dev and packaged builds and follows
+ * the user's manager-data location when the Mods Vault is relocated.
+ */
+function getBackupRoot(modsVaultPath: string): string {
+  const normalizedVaultPath = modsVaultPath?.trim();
+  if (!normalizedVaultPath) {
+    throw new Error(
+      "Mods Vault path is not configured; cannot resolve backup location.",
+    );
+  }
+  if (!path.isAbsolute(normalizedVaultPath)) {
+    throw new Error(
+      "Mods Vault path must be absolute; refusing to create backups relative to the process working directory.",
+    );
+  }
+
+  return path.join(path.dirname(normalizedVaultPath), "backups");
+}
 
 export function registerModHandlers(): void {
   if (handlersRegistered) return;
@@ -30,11 +53,13 @@ export function registerModHandlers(): void {
   ipcMain.handle("mods:reconcile", async (_e, enabledMods: string[]) => {
     try {
       const config = getConfig();
+      const backupRoot = getBackupRoot(config.modsVaultPath);
       await reconcileMods(
         enabledMods,
         config.activeModsPath,
         config.modsVaultPath,
-        config.installStrategy
+        backupRoot,
+        config.maxPreReconcileBackups
       );
       return { ok: true };
     } catch (e: any) {
@@ -46,11 +71,12 @@ export function registerModHandlers(): void {
   ipcMain.handle("mods:delete", async (_e, modName: string) => {
     try {
       const config = getConfig();
+      const backupRoot = getBackupRoot(config.modsVaultPath);
       await deleteMod(
         config.activeModsPath,
         config.modsVaultPath,
         modName,
-        config.installStrategy
+        backupRoot
       );
       return { ok: true };
     } catch (e: any) {

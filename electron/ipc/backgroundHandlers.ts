@@ -12,7 +12,7 @@ import { getConfig, replaceConfig } from "../config/configManager";
 import {
   bgStorageDir,
   bgDestFor,
-  toFileUrl,
+  toImageDataUrl,
 } from "../utils/backgroundUtils";
 
 let cachedMainWindow: BrowserWindow | null = null;
@@ -26,7 +26,11 @@ export function registerBackgroundHandlers(
   ipcMain.handle("bg:get", async () => {
     const config = getConfig();
     const p = config.backgroundImagePath || "";
-    return { ok: true, path: p, fileUrl: p ? toFileUrl(p) : "" };
+    return {
+      ok: true,
+      path: p,
+      fileUrl: p ? await toImageDataUrl(p) : "",
+    };
   });
 
   ipcMain.handle("bg:choose", async () => {
@@ -55,7 +59,11 @@ export function registerBackgroundHandlers(
       const dst = bgDestFor(srcAbs);
       await fse.copy(srcAbs, dst, { overwrite: true });
       replaceConfig({ backgroundImagePath: dst }, mainWindow);
-      return { ok: true, path: dst, fileUrl: toFileUrl(dst) };
+      return {
+        ok: true,
+        path: dst,
+        fileUrl: await toImageDataUrl(dst),
+      };
     } catch (e: any) {
       return { ok: false, message: e?.message || "Failed to set background." };
     }

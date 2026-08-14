@@ -39,6 +39,9 @@ type AppConfig = {
 
   // background support
   backgroundImagePath?: string;
+
+  // pre-reconcile backup retention
+  maxPreReconcileBackups: number;
 };
 
 type ModRow = { name: string; enabled: boolean; inVault: boolean };
@@ -75,6 +78,10 @@ const CH = {
 
   // paths (immutable vault paths for Advanced Settings)
   PATHS_IMMUTABLE_GET: "paths:immutable:get",
+
+  // app/support
+  APP_GET_VERSION: "app:getVersion",
+  SUPPORT_OPEN: "support:open",
 } as const;
 
 // Small helper so all invoke calls log consistently if something blows up
@@ -157,6 +164,15 @@ contextBridge.exposeInMainWorld("api", {
 
   manualGameDataSave(): Promise<{ ok: boolean; files?: number; bytes?: number; error?: string }> {
     return invoke(CH.MANUAL_SAVE);
+  },
+
+  // ----- App / Support -----
+  getAppVersion(): Promise<string> {
+    return invoke(CH.APP_GET_VERSION);
+  },
+
+  openSupportPage(): Promise<{ ok: boolean; message?: string }> {
+    return invoke(CH.SUPPORT_OPEN);
   },
 
   // ----- Immutable Managed Paths (Advanced Settings → Managed Paths) -----

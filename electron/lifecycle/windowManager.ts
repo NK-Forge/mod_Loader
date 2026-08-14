@@ -35,7 +35,10 @@ export async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: app.isPackaged,
+      // Keep Chromium's same-origin and mixed-content protections enabled
+      // in both development and packaged builds.
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   });
 

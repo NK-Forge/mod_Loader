@@ -12,6 +12,20 @@ import { patchConfig as syncConfigStore } from "../../src/main/state/configStore
 export type InstallStrategy = "hardlink" | "symlink" | "copy";
 export type Platform = "steam" | "epic" | "xbox" | "unknown";
 
+const DEFAULT_MAX_PRE_RECONCILE_BACKUPS = 3;
+const MIN_MAX_PRE_RECONCILE_BACKUPS = 1;
+const MAX_MAX_PRE_RECONCILE_BACKUPS = 10;
+
+function normalizeMaxPreReconcileBackups(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_MAX_PRE_RECONCILE_BACKUPS;
+
+  return Math.min(
+    MAX_MAX_PRE_RECONCILE_BACKUPS,
+    Math.max(MIN_MAX_PRE_RECONCILE_BACKUPS, Math.trunc(numeric))
+  );
+}
+
 export interface AppConfig {
   setupComplete: boolean;
   autoDetected: boolean;
@@ -36,6 +50,7 @@ export interface AppConfig {
   xboxLaunchHelperPath?: string;
   selectedStorefrontId?: string;
   backgroundImagePath?: string;
+  maxPreReconcileBackups: number;
 }
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
@@ -54,6 +69,7 @@ let config: AppConfig = {
   launchUri: "",
   steamAppId: "2183900",
   backgroundImagePath: "",
+  maxPreReconcileBackups: DEFAULT_MAX_PRE_RECONCILE_BACKUPS,
 };
 
 export function getConfig(): AppConfig {
@@ -64,7 +80,13 @@ export function loadConfigFromDisk(): void {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-      config = { ...config, ...data };
+      config = {
+        ...config,
+        ...data,
+        maxPreReconcileBackups: normalizeMaxPreReconcileBackups(
+          data?.maxPreReconcileBackups ?? config.maxPreReconcileBackups
+        ),
+      };
       syncConfigStore(config);
     } else {
       // first run: persist defaults and sync
@@ -88,7 +110,17 @@ export function replaceConfig(
   next: Partial<AppConfig>,
   mainWindow?: BrowserWindow | null
 ): void {
-  config = { ...config, ...next };
+  const normalizedNext =
+    Object.prototype.hasOwnProperty.call(next, "maxPreReconcileBackups")
+      ? {
+          ...next,
+          maxPreReconcileBackups: normalizeMaxPreReconcileBackups(
+            next.maxPreReconcileBackups
+          ),
+        }
+      : next;
+
+  config = { ...config, ...normalizedNext };
   saveConfigToDisk();
   syncConfigStore(config);
   mainWindow?.webContents.send("config:changed", config);

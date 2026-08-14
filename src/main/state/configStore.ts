@@ -34,6 +34,8 @@ export type AppConfig = {
 
   lastRunUsedMods?: boolean;
   lastRunClosedAt?: string;
+
+  maxPreReconcileBackups?: number;
 };
 
 const emitter = new EventEmitter();
@@ -41,6 +43,7 @@ const emitter = new EventEmitter();
 // in-memory config (authoritative for main + services)
 let CONFIG: AppConfig = {
   installStrategy: "hardlink",
+  maxPreReconcileBackups: 3,
 };
 
 export function getConfig(): AppConfig {
